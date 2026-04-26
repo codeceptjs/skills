@@ -1,0 +1,8 @@
+{
+  "name": "codeceptjs",
+  "description": "Skills for working with CodeceptJS 4 — orientation, authoring, debugging, refactoring, and CI auto-repair.",
+  "version": "0.1.0",
+  "author": {
+    "name": "CodeceptJS"
+  }
+}

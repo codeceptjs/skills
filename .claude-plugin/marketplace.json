@@ -1,0 +1,16 @@
+{
+  "name": "codeceptjs-skills",
+  "metadata": {
+    "description": "Official CodeceptJS 4 skills — orientation, authoring, debugging, refactoring, and CI auto-repair for any AI agent that supports the Agent Skills standard."
+  },
+  "owner": {
+    "name": "CodeceptJS"
+  },
+  "plugins": [
+    {
+      "name": "codeceptjs",
+      "source": "./plugins/codeceptjs",
+      "description": "Eight skills covering everything an AI agent needs to write, debug, refactor, and fix CodeceptJS 4 tests — including a primer (codeceptjs-fundamentals), live page exploration (codeceptjs-exploration), trace analysis (codeceptjs-run-analysis), the auth plugin recipe (codeceptjs-auth), and four action skills (writing, debugging, refactoring, ci-fix)."
+    }
+  ]
+}

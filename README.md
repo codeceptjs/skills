@@ -4,21 +4,30 @@ AI agent skills for working with [CodeceptJS 4](https://codecept.io). Eight skil
 
 ## Install
 
-The easiest way to install these skills across any supported AI agent — Claude Code, Cursor, OpenAI Codex, GitHub Copilot, VS Code, Goose, OpenHands, Junie, Gemini CLI, and [many more](https://agentskills.io) — is the [`skills`](https://skills.sh) CLI:
+### Claude Code (plugin marketplace)
+
+From inside Claude Code:
+
+```text
+/plugin marketplace add codeceptjs/skills
+/plugin install codeceptjs@codeceptjs-skills
+```
+
+That registers this repo as a marketplace and installs the `codeceptjs` plugin — all 8 skills, ready to invoke as `/codeceptjs-fundamentals`, `/writing-codeceptjs-tests`, etc.
+
+### Any other supported agent (`npx skills`)
+
+For Cursor, OpenAI Codex, GitHub Copilot, VS Code, Goose, OpenHands, Junie, Gemini CLI, and [many more](https://agentskills.io), use the [`skills`](https://skills.sh) CLI:
 
 ```bash
 npx skills add codeceptjs/skills
 ```
 
-The CLI runs an interactive menu — pick which skills to install and whether to install globally (across all your projects) or only in the current project. To update later:
+The CLI runs an interactive menu — pick which skills to install and whether to install globally (across all your projects) or only in the current project. Update later with `npx skills update`.
 
-```bash
-npx skills update
-```
+### Manual install
 
-That's it. The same command wires the skills into whichever supported agent the project uses; you don't need a per-tool install path.
-
-If you can't run the CLI (locked-down environment, custom layout, etc.), each `<skill-name>/SKILL.md` is a plain Markdown file you can drop into the agent's skills directory by hand:
+If you can't run the CLI (locked-down environment, custom layout, etc.), each `<skill-name>/SKILL.md` at the repo root is a plain Markdown file you can drop into the agent's skills directory by hand:
 
 - **Claude Code** — `.claude/skills/<skill-name>/SKILL.md` (project) or `~/.claude/skills/<skill-name>/SKILL.md` (personal). [Docs](https://code.claude.com/docs/en/skills).
 - **Cursor** — `.cursor/skills/<skill-name>/SKILL.md`. [Docs](https://cursor.com/docs/context/skills).
