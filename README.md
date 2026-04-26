@@ -1,10 +1,32 @@
-# CodeceptJS 4 Skills
+# CodeceptJS Skills
 
-Skills for AI coding assistants working on CodeceptJS 4 projects. Each skill is a single `SKILL.md` file with YAML frontmatter (`name`, `description`) and a markdown body following the [Agent Skills](https://agentskills.io) open standard.
+AI agent skills for working with [CodeceptJS 4](https://codecept.io). Eight skills covering project orientation, authoring, debugging, refactoring, and CI auto-repair — all written against the [Agent Skills](https://agentskills.io) open standard.
 
-The skills assume CodeceptJS 4.x (ESM) and lean on plugins introduced in 4.x: `aiTrace`, `pauseOn`, the `auth` plugin, the WebElement API (`grabWebElement` / `grabWebElements`), and the MCP server at `bin/mcp-server.js`. They reference canonical docs at `node_modules/codeceptjs/docs/...` rather than duplicating them, so they stay short and work in any project that has CodeceptJS installed.
+## Install
 
-## What's in here
+The easiest way to install these skills across any supported AI agent — Claude Code, Cursor, OpenAI Codex, GitHub Copilot, VS Code, Goose, OpenHands, Junie, Gemini CLI, and [many more](https://agentskills.io) — is the [`skills`](https://skills.sh) CLI:
+
+```bash
+npx skills add codeceptjs/skills
+```
+
+The CLI runs an interactive menu — pick which skills to install and whether to install globally (across all your projects) or only in the current project. To update later:
+
+```bash
+npx skills update
+```
+
+That's it. The same command wires the skills into whichever supported agent the project uses; you don't need a per-tool install path.
+
+If you can't run the CLI (locked-down environment, custom layout, etc.), each `<skill-name>/SKILL.md` is a plain Markdown file you can drop into the agent's skills directory by hand:
+
+- **Claude Code** — `.claude/skills/<skill-name>/SKILL.md` (project) or `~/.claude/skills/<skill-name>/SKILL.md` (personal). [Docs](https://code.claude.com/docs/en/skills).
+- **Cursor** — `.cursor/skills/<skill-name>/SKILL.md`. [Docs](https://cursor.com/docs/context/skills).
+- **OpenAI Codex** — under the project's skills directory. [Docs](https://developers.openai.com/codex/skills/).
+- **GitHub Copilot / VS Code** — Agent Skills supported natively. [Copilot docs](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills), [VS Code docs](https://code.visualstudio.com/docs/copilot/customization/agent-skills).
+- **AGENTS.md tools** (Aider, Cline, etc.) — concatenate every `SKILL.md` into a single `AGENTS.md` at repo root.
+
+## Skills
 
 | Skill | Use when |
 |---|---|
@@ -17,101 +39,17 @@ The skills assume CodeceptJS 4.x (ESM) and lean on plugins introduced in 4.x: `a
 | [`refactoring-codeceptjs-tests`](./refactoring-codeceptjs-tests/SKILL.md) | Cleaning up an existing suite — extracting page objects, taming long locators, moving raw JS into custom helpers. Targeted (one file) or global. Proposes before applying. |
 | [`ci-fix-tests`](./ci-fix-tests/SKILL.md) | Non-interactive CI mode: a run failed; auto-attempt safe fixes (locator drift, missing waits), rerun only the failing scenarios, roll back if no improvement, always write `output/ci-fix.md`. |
 
-`codeceptjs-fundamentals`, `codeceptjs-exploration`, `codeceptjs-run-analysis`, and `codeceptjs-auth` are utility skills referenced from the action skills (writing, debugging, refactoring, ci-fix). The action skills are what users typically invoke; the utility skills get pulled in as needed.
+`codeceptjs-fundamentals`, `codeceptjs-exploration`, `codeceptjs-run-analysis`, and `codeceptjs-auth` are utility skills that the four action skills (writing, debugging, refactoring, ci-fix) invoke as needed. Users typically trigger an action skill; the utility skills get pulled in automatically.
 
-## Installing
+## How Agent Skills work
 
-The `SKILL.md` format is the [Agent Skills open standard](https://agentskills.io), which Claude Code already supports natively. For Cursor and Codex, a tiny extension or filename change is enough — the markdown body and frontmatter carry over.
+Each skill is a folder containing a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown instructions. Agents use **progressive disclosure**:
 
-All install commands below assume you are inside the directory that contains the skill folders — either a clone of this repo, or `skills/` inside a CodeceptJS project that vendored a copy. To get the standalone version:
+1. **Discovery** — at startup the agent loads only each skill's name and description.
+2. **Activation** — when a task matches a skill's description, the agent pulls the full `SKILL.md` into context.
+3. **Execution** — the agent follows the instructions, optionally running bundled scripts or loading referenced files.
 
-```bash
-git clone https://github.com/codeceptjs/skills.git
-cd skills
-```
-
-### Claude Code
-
-Skills live in one of three locations (project, personal, plugin) — see [Claude's skills docs](https://code.claude.com/docs/en/skills). Each skill is a directory with `SKILL.md`. Claude auto-loads a skill when the description matches the user's request, or you can invoke it directly with `/skill-name`.
-
-**Project-local** (recommended — version-control alongside your tests):
-
-```bash
-mkdir -p .claude/skills
-ln -s "$PWD"/*/ .claude/skills/   # or `cp -r` if symlinks are awkward
-```
-
-**Personal** (available across all your projects):
-
-```bash
-mkdir -p ~/.claude/skills
-ln -s "$PWD"/*/ ~/.claude/skills/
-```
-
-Claude watches these directories for changes — adding or editing a skill takes effect within the current session.
-
-### Cursor
-
-Cursor reads project rules from `.cursor/rules/*.mdc`. The frontmatter format is compatible (`description` is recognised), so the only thing that needs to change is the file extension and location.
-
-```bash
-mkdir -p .cursor/rules
-for d in */; do
-  name=$(basename "$d")
-  cp "$d/SKILL.md" ".cursor/rules/$name.mdc"
-done
-```
-
-For each rule, Cursor's Agent reads `description` to decide when to apply. To make a skill apply only when working in test files, edit the rule's frontmatter and add a `globs` field (e.g. `globs: ["tests/**/*.js", "tests/**/*.ts"]`); to make it always-on, add `alwaysApply: true`.
-
-User-level rules (across all your Cursor projects) are managed through `Cursor Settings > Rules` — see [Cursor's rules docs](https://cursor.com/docs/context/rules).
-
-### Codex CLI / `AGENTS.md`
-
-Codex (and several other tools — GitHub Copilot, Aider, Cline, etc.) reads [`AGENTS.md`](https://agents.md), an open Markdown format that lives at the repo root. It has no native per-skill discovery, so the practical approach is to generate one `AGENTS.md` from all the skills.
-
-**Option A — concatenate everything** (every skill always in context, simplest):
-
-```bash
-{
-  echo "# CodeceptJS Agent Instructions"
-  echo
-  echo "AI skills for working with CodeceptJS 4 in this project. The full content of each is included below."
-  echo
-  for d in */; do
-    cat "$d/SKILL.md"
-    echo
-  done
-} > AGENTS.md
-```
-
-**Option B — pointer index** (lighter context, agent reads each `SKILL.md` on demand):
-
-```bash
-{
-  echo "# CodeceptJS Agent Instructions"
-  echo
-  echo "AI skills for working with CodeceptJS 4. Open the relevant \`SKILL.md\` for your task:"
-  echo
-  for d in */; do
-    name=$(basename "$d")
-    desc=$(awk '/^description:/{sub(/^description: */, ""); print; exit}' "$d/SKILL.md")
-    echo "- \`$name/SKILL.md\` — $desc"
-  done
-} > AGENTS.md
-```
-
-Pick A if you want every skill loaded for every task; pick B if your agent is happy following file references. Both work; B keeps the upfront context small.
-
-`AGENTS.md` is also recognised by Claude Code and Cursor as a fallback when their native systems aren't set up — so even if a contributor hasn't run the install steps above, anything in `AGENTS.md` will still reach the agent.
-
-### Other tools
-
-The skill format is plain Markdown with YAML frontmatter, so any tool that reads project instructions can use them. Common patterns:
-
-- **GitHub Copilot Workspace** — reads `AGENTS.md` natively.
-- **Aider** — reads `CONVENTIONS.md`; rename or symlink an `AGENTS.md` into place.
-- **Continue.dev** — point at this directory in `.continue/config.json`.
+That keeps the upfront context small while letting one project ship many skills. The format was originally developed by Anthropic, released as an open standard, and is now supported across the agent ecosystem — see [agentskills.io](https://agentskills.io) for the full client list and the format spec.
 
 ## Format
 
@@ -120,36 +58,31 @@ The skill format is plain Markdown with YAML frontmatter, so any tool that reads
 └── SKILL.md
 ```
 
-Each `SKILL.md` starts with frontmatter and a body:
+Each `SKILL.md` starts with frontmatter:
 
 ```yaml
 ---
 name: <skill-name>
 description: One sentence describing what the skill does and when it should trigger.
 ---
-
-# Title
-
-Skill body — workflows, rules, decision trees. Reference docs at
-`node_modules/codeceptjs/docs/...` rather than duplicating them.
 ```
 
-`description` is the field every supported tool relies on for triggering. Front-load the key use case in the description; tool budgets typically truncate descriptions around 1–1.5 KB.
+…followed by markdown body. `description` is the field every supported agent relies on for triggering — front-load the key use case, since most tools cap descriptions around 1–1.5 KB before truncation.
 
-Conventions used by skills in this repo:
+Conventions used in this repo:
 
 - Sub-150 lines per skill; concept-driven prose over code dumps.
-- Prefer pointers to `node_modules/codeceptjs/docs/<file>.md` over reproducing content.
-- Cross-reference other skills by name (`see codeceptjs-exploration`) — let the agent navigate.
-- No `await` on plain action steps in any code snippet (matches the framework's `await` rule).
-- Credentials and secrets always come from env vars and pass through `secret()`.
+- Pointers to `node_modules/codeceptjs/docs/<file>.md` rather than reproducing content — the skills work in any project that has CodeceptJS installed.
+- Cross-references between skills by name (`see codeceptjs-exploration`) instead of duplicating content.
+- No `await` on plain action steps in any code snippet (matches CodeceptJS's `await` rule).
+- Credentials always come from env vars and pass through `secret()`.
 
 ## Contributing
 
 Before adding a new skill:
 
-1. Read every existing `SKILL.md` — they share a tone, a structure, and an opinion about brevity.
+1. Read every existing `SKILL.md` — they share a tone and an opinion about brevity.
 2. Check whether your idea is already covered by one of them. If you'd be duplicating triggers, extend the existing skill instead.
-3. Make sure the workflow has a real goal (writing, fixing, refactoring) — toolkits without a goal are fine but should be split into "foundations" + "use cases" rather than a numbered workflow (see `codeceptjs-run-analysis` for the pattern).
+3. Toolkits (no single end goal) belong in a "foundations" + "use cases" structure — see `codeceptjs-run-analysis` for the pattern. Workflows (one goal) use numbered steps — see `ci-fix-tests`.
 
-When you add or rename a skill, update the table at the top of this README.
+When you add or rename a skill, update the table above.
