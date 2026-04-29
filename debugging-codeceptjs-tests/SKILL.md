@@ -14,7 +14,7 @@ Two modes:
 ## Workflow
 
 ### 1. Read the project (fundamentals)
-Run the **codeceptjs-fundamentals** skill. You need: helper, plugins on (especially `aiTrace`, `screenshotOnFail`, `pageInfo`, `retryFailedStep`, `pauseOn`, `auth`), env vars, whether MCP is wired up. If `aiTrace` is **not** enabled, suggest adding `plugins: { aiTrace: { enabled: true } }` before re-running — most of this skill leans on its output.
+Run the **codeceptjs-fundamentals** skill. You need: helper, plugins on (especially `aiTrace`, `screenshot`, `pageInfo`, `retryFailedStep`, `pause`, `auth`), env vars, whether MCP is wired up. If `aiTrace` is **not** enabled, suggest adding `plugins: { aiTrace: { enabled: true } }` before re-running — most of this skill leans on its output.
 
 ### 2. Reproduce minimally
 Run only the failing test, with steps printed:
@@ -64,12 +64,12 @@ Edit the test, then `npx codeceptjs run --grep '<scenario>' --steps`. Use **code
 | You want to … | Use |
 |---|---|
 | Per-step artifacts after a run | `aiTrace` plugin (`output/trace_*/`) |
-| REPL on first failure | `npx codeceptjs run -p pauseOn:fail` |
-| Single-step interactively | `pauseOn:step` |
-| Break on a file or URL | `pauseOn:file:<path>:<line>` / `pauseOn:url:<glob>` |
+| REPL on first failure | `npx codeceptjs run -p pause` (default `on=fail`) |
+| Single-step interactively | `npx codeceptjs run -p pause:on=step` |
+| Break on a file or URL | `pause:on=file:path=<file>;line=<N>` / `pause:on=url:pattern=<glob>` |
 | Step-by-step from an AI agent | MCP `run_step_by_step` |
 | Test a hypothesis on the live page | MCP `run_code` or in-test `pause()` |
-| Visual replay slideshow | `stepByStepReport` plugin → `output/records.html` |
+| Visual replay slideshow | `screenshot:slides=true` → `output/records.html` |
 | Auto-suggest fixes for broken locators | `heal` plugin + `--ai` (disabled in `--debug`) |
 | Diagnose framework-internal behaviour | `DEBUG="codeceptjs:*"` (or a specific namespace) |
 | Inspect specific elements — state, markup, position, children | `I.grabWebElement` / `I.grabWebElements` (cross-helper WebElement API) |
@@ -131,7 +131,7 @@ If the trace shows a redirect to `/login` mid-test, or 401/403 in console, fix *
 
 - `node_modules/codeceptjs/docs/mcp.md` — MCP tool list and client config
 - `node_modules/codeceptjs/docs/aitrace.md` — plugin config, trace.md format
-- `node_modules/codeceptjs/docs/debugging.md` — `pause()`, `pauseOn`, IDE setup, DEBUG namespaces
+- `node_modules/codeceptjs/docs/debugging.md` — in-test `pause()`, the `pause` plugin's `on=` modes, IDE setup, DEBUG namespaces
 - `node_modules/codeceptjs/docs/heal.md` — self-healing recipes
 - `node_modules/codeceptjs/docs/retry.md` — retry semantics across step / scenario / hook
-- `node_modules/codeceptjs/lib/plugin/aiTrace.js`, `lib/plugin/pauseOn.js`, `bin/mcp-server.js` — source if docs and code disagree
+- `node_modules/codeceptjs/lib/plugin/aiTrace.js`, `lib/plugin/pause.js`, `lib/plugin/screenshot.js`, `lib/plugin/browser.js`, `bin/mcp-server.js` — source if docs and code disagree

@@ -1,6 +1,6 @@
 ---
 name: codeceptjs-fundamentals
-description: Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, the `await` rule, and where to list available actions. Then reads the project's config and reports which helper, plugins, env switching, and page objects are actually active. Other CodeceptJS skills depend on this output.
+description: Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, and the `await` rule. Then runs a three-step discovery against this project: read the config, run `codeceptjs list` to enumerate available `I.*` actions, run `codeceptjs dry-run` to enumerate existing tests — and reports which helper, plugins, env switching, page objects, custom actions, and test suites are actually active. Other CodeceptJS skills depend on this output.
 ---
 
 # CodeceptJS Fundamentals
@@ -31,10 +31,46 @@ Plugins are event listeners. CodeceptJS emits lifecycle events on a global dispa
 
 ### Plugins worth knowing
 - `retryFailedStep` — re-runs a transient action failure
-- `screenshotOnFail` — saves a screenshot for every failed step
+- `screenshot` — saves a screenshot when a step matches the trigger (default `on: 'fail'`); set `slides: true` to also produce a `output/records.html` slideshow (replaces the old `stepByStepReport`)
 - `pageInfo` — dumps URL, HTML, console output on failure
 - `auth` — session reuse for login (see the `codeceptjs-auth` skill)
-- `aiTrace` — per-step screenshots/HTML/ARIA/console for AI debugging
+- `aiTrace` — per-step screenshots/HTML/ARIA/console for AI debugging (default `on: 'step'`; set `on: 'fail'` to capture only failures)
+- `pause` — interactive pause (replaces `pauseOn` / `pauseOnFail`; default `on: 'fail'`)
+- `heal` — AI-suggested fixes for broken action steps (disabled in `--debug` mode)
+- `screencast` — records a video / animated frames of the run (replaces `subtitles`)
+- `browser` — CLI-only override of browser helper config; see the next section
+
+### Running plugins from the CLI
+Plugins are normally enabled in `codecept.conf.{js,ts}`, but any plugin can be turned on or reconfigured for a single run via `-p <plugin>` on the runner. Args chain with `:` (or `;` inside one arg):
+
+```bash
+npx codeceptjs run -p aiTrace                      # enable aiTrace for this run
+npx codeceptjs run -p screenshot:on=step           # screenshot every step
+npx codeceptjs run -p pause:on=file:path=tests/login_test.js;line=43
+npx codeceptjs run -p browser:hide:browser=firefox:windowSize=1280x800
+```
+
+`screenshot`, `pause`, `aiTrace`, and `heal` share a unified **`on=` parameter** that picks when they fire:
+
+| `on=` value | Fires when | Extra args |
+|---|---|---|
+| `fail` | a step fails (default for screenshot / pause / heal) | — |
+| `step` | every step (default for aiTrace) | — |
+| `test` | after each test | — |
+| `file` | execution reaches a file/line | `path=<file>[;line=<N>]` |
+| `url` | browser URL matches a pattern | `pattern=<glob>` (`*` wildcards) |
+
+The **`browser` plugin** is CLI-only and overrides the active browser helper without touching the config file — useful for one-off env variants and CI matrix legs:
+
+```bash
+npx codeceptjs run -p browser:show                              # force visible
+npx codeceptjs run -p browser:hide                              # force headless
+npx codeceptjs run -p browser:browser=firefox                   # switch browser
+npx codeceptjs run -p browser:windowSize=1024x768
+npx codeceptjs run -p browser:hide:browser=webkit:windowSize=800x600
+```
+
+Requires `@codeceptjs/configure` installed. It translates `browser=` per helper (Puppeteer's `product`, Playwright's `browser`) and injects `--headless` into WebDriver capability args when toggling `hide`.
 
 ### Test file structure
 One `Feature(...)` per file with one or more `Scenario(...)` blocks inside it. CodeceptJS does **not** allow nested suites or multiple Features in the same file. Hooks: `Before`, `After`, `BeforeSuite`, `AfterSuite`, plus `Fail((test, err) => { ... })` for failure-only cleanup. Page objects can expose `_before`, `_after`, `_afterSuite` lifecycle methods so per-page setup lives next to the page.
@@ -61,18 +97,35 @@ Wrap passwords, tokens, API keys so they're masked in logs, step output, and tra
 ### Parallel runs
 `npx codeceptjs run-workers <N>` splits Scenarios across N Node worker threads; results aggregate in the main process. The config can also describe **profiles** (different browsers, viewports, environments) via the `multiple` block; launch with `npx codeceptjs run-multiple <profile>`.
 
-### Listing available actions
-Don't memorize — list them at runtime against the active config:
-- `npx codeceptjs list` prints every available `I.<method>`.
-- The CodeceptJS MCP server's `list_actions` tool returns the same data, grouped by helper, with signatures.
-
-Use these before suggesting any method, especially in projects with custom helpers.
-
 ---
 
-## Read this project
+## Discover this project
 
-Open the active config (resolve via `package.json` scripts and CI workflows if multiple files exist). Extract: which helper(s) and any non-default behaviour (browser, strict, navigation, base URL, viewport, env-driven values); which plugins (incl. anything `setCommonPlugins()` injects); AI provider + the env var its key requires; how environments are selected (`--config` vs `process.env.*` branching, plus any `setHeadlessWhen`-style mutations); page object names from `include`; any custom helpers (entries pointing at local files).
+Three steps, in order. Don't skip — guesses about helpers, custom actions, or what tests exist will be wrong as often as they're right.
+
+### 1. Read the active config
+
+Open `codecept.conf.{js,ts,mjs,cjs}` (resolve via `package.json` scripts and CI workflows if multiple files exist — note the path; you'll pass it to `-c` in steps 2 and 3). Extract: which helper(s) and any non-default behaviour (browser, strict, navigation, base URL, viewport, env-driven values); which plugins (incl. anything `setCommonPlugins()` injects); AI provider + the env var its key requires; how environments are selected (`--config` vs `process.env.*` branching, plus any `setHeadlessWhen`-style mutations); page object names from `include`; any custom helpers (entries pointing at local files).
+
+### 2. List available actions
+
+```sh
+npx codeceptjs list -c <config>          # every I.<method>, grouped by helper, with signature
+npx codeceptjs list --docs -c <config>   # adds JSDoc + docs/webapi/* prose under each action
+npx codeceptjs list --action <name> -c <config>   # single action; I. prefix optional; implies --docs
+```
+
+Run `list` against the discovered config before suggesting any method — especially in projects with custom helpers, where the available `I.*` surface differs from the built-in catalog. The CodeceptJS MCP server's `list_actions` tool returns the same data programmatically.
+
+### 3. List existing tests
+
+```sh
+npx codeceptjs dry-run -c <config>            # suite + test names that the config would load
+npx codeceptjs dry-run --steps -c <config>    # also prints queued I.* steps inside each test
+npx codeceptjs dry-run --grep "@smoke" -c <config>   # filter by name; --features / --tests narrow file kind
+```
+
+`dry-run` walks the test files the active config picks up and prints them without executing — confirming both **which tests exist** and (with `--steps`) **what each Scenario would do** before any browser spins up. For Gherkin step definitions specifically, `npx codeceptjs gherkin:steps -c <config>` lists registered step patterns.
 
 ## Report
 

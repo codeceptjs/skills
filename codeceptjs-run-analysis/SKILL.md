@@ -80,7 +80,7 @@ Locate the trace, jump to the failed-or-last step, open ARIA + screenshot first,
 ## Pointers
 
 - `node_modules/codeceptjs/docs/aitrace.md` — trace format and config knobs
-- `node_modules/codeceptjs/docs/debugging.md` — verbose flags, `pauseOn` modes
+- `node_modules/codeceptjs/docs/debugging.md` — verbose flags, `pause` plugin's `on=` modes
 - `node_modules/codeceptjs/docs/reports.md` — alternative reporters
 - `codeceptjs-fundamentals` — what's actually configured
 - `codeceptjs-exploration` — when locator drift is the cause
