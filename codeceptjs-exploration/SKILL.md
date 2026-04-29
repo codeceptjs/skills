@@ -9,9 +9,12 @@ Authoring a test, debugging a failure, and refactoring a stale locator all share
 
 ## How to look at a page
 
-Drive everything through MCP `run_code`. The response carries URL, ARIA snapshot, screenshot, and console logs after each command — that's the ground truth.
+Drive everything through MCP. Two tools matter for exploration:
 
-Three sources, in order of preference:
+- **`run_code`** — runs CodeceptJS code and returns the value the code produced, captures `console.*` output, and saves a final-state snapshot. Use when you want to *do something and look at the result* (try a locator, grab a value, navigate).
+- **`snapshot`** — captures the current state without performing any action: URL, cookies, localStorage, HTML, ARIA, screenshot, console. Use when you want to look at "what's on the page right now" between two actions, without re-running anything.
+
+Three artifact sources, in order of preference:
 
 1. **ARIA snapshot first.** Structured, free of styling noise, easy to scan for duplicates and accessibility names.
 2. **Screenshot.** Visual confirmation — catches layout breaks, missing icons, "rendered but wrong" cases that ARIA can't show.

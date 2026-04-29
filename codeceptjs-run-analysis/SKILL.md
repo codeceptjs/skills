@@ -29,6 +29,7 @@ For the focus step `NNNN_<step>`:
 | `NNNN_*_screenshot.png` | Visual confirmation — layout, animation, "rendered but wrong" |
 | `NNNN_*_page.html` | Only when ARIA is missing context. **Use `grep`, not `cat`** |
 | `NNNN_*_console.json` | JS errors, 4xx/5xx, deprecation warnings explaining "vanished" elements |
+| `NNNN_*_storage.json` | Cookies + localStorage at this step. First place to look when auth is the suspected culprit. |
 
 ### Never read big files whole
 HTML snapshots can be megabytes; `console.json` arrays can be long.
