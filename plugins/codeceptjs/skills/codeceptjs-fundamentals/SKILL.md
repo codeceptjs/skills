@@ -1,6 +1,6 @@
 ---
 name: codeceptjs-fundamentals
-description: Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, and the `await` rule. Then runs a three-step discovery against this project: read the config, run `codeceptjs list` to enumerate available `I.*` actions, run `codeceptjs dry-run` to enumerate existing tests — and reports which helper, plugins, env switching, page objects, custom actions, and test suites are actually active. Other CodeceptJS skills depend on this output.
+description: Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, and the `await` rule. Then runs a four-step discovery against this project: `codeceptjs check` to verify the setup loads, read the config, run `codeceptjs list` to enumerate available `I.*` actions, run `codeceptjs dry-run` to enumerate existing tests — and reports which helper, plugins, env switching, page objects, custom actions, and test suites are actually active. Other CodeceptJS skills depend on this output.
 ---
 
 # CodeceptJS Fundamentals
@@ -12,7 +12,9 @@ Two jobs: teach the concepts you need to read CodeceptJS code without making thi
 ## Concepts
 
 ### Module system
-CodeceptJS 4 is **ESM-first**. Tests, configs, page objects, and helpers use `import`/`export`; the project's `package.json` has `"type": "module"`. CodeceptJS 3 was CommonJS-based — migrating from 3.x means converting `require()` / `module.exports` and updating `package.json`. **TypeScript** works either way: name the config `codecept.conf.ts`, add a loader entry like `require: ['tsx/cjs']` (or `ts-node/register`), and write tests as `.ts` files.
+CodeceptJS 4 is **ESM and TypeScript only**. Tests, configs, page objects, and helpers use `import`/`export`; `package.json` **must** have `"type": "module"` — if it isn't there yet, add it before doing anything else (without it, every `.js` file is parsed as CommonJS and imports fail). **TypeScript** is first-class: name the config `codecept.conf.ts`, add a loader entry like `require: ['tsx/cjs']` (or `ts-node/register`), and write tests as `.ts` files.
+
+If the project is on **CodeceptJS 3.x or still uses CommonJS** (`require()` / `module.exports`, no `"type": "module"`, removed helpers/plugins like `autoLogin` or `Nightmare`), stop here and run the **`codeceptjs-3-to-4-migration`** skill — it walks the full upgrade path (Node bump, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals`, dependency bumps, verify). Don't try to half-fix individual files; the migration is a whole-project change.
 
 ### Configuration
 `codecept.conf.{js,ts,mjs,cjs}` at the repo root. Top-level keys: `helpers`, `plugins`, `include`, `ai`, `bootstrap`/`teardown`, `tests`, `output`, `timeout`. TypeScript configs declare a loader in `require: [...]` (`tsx/cjs`, `ts-node/register`, `ts-node/esm`). Multiple env-specific files (`codecept.ci.conf.js`, …) are selected via `--config <file>`. The `@codeceptjs/configure` package mutates the resolved config at load time (`setHeadlessWhen`, `setBrowser`, `setCommonPlugins`, `setWindowSize`) — static fields can lie until you grep for that import.
@@ -101,13 +103,21 @@ Wrap passwords, tokens, API keys so they're masked in logs, step output, and tra
 
 ## Discover this project
 
-Three steps, in order. Don't skip — guesses about helpers, custom actions, or what tests exist will be wrong as often as they're right.
+Four steps, in order. Don't skip — guesses about helpers, custom actions, or what tests exist will be wrong as often as they're right.
 
-### 1. Read the active config
+### 1. Verify the setup loads
 
-Open `codecept.conf.{js,ts,mjs,cjs}` (resolve via `package.json` scripts and CI workflows if multiple files exist — note the path; you'll pass it to `-c` in steps 2 and 3). Extract: which helper(s) and any non-default behaviour (browser, strict, navigation, base URL, viewport, env-driven values); which plugins (incl. anything `setCommonPlugins()` injects); AI provider + the env var its key requires; how environments are selected (`--config` vs `process.env.*` branching, plus any `setHeadlessWhen`-style mutations); page object names from `include`; any custom helpers (entries pointing at local files).
+```sh
+npx codeceptjs check -c <config>          # validates config, container, helpers, plugins, page objects, hooks, tests, defs
+```
 
-### 2. List available actions
+Each item prints a pass/fail line, so the output doubles as a quick inventory of what the project has wired up. If anything fails here, fix it before running `list` or `dry-run` — a broken helper or unresolved page object will distort their output. Skipping this step also means you won't notice a missing dependency, an `auth` plugin pointed at a non-existent login route, or a custom helper that throws at construction.
+
+### 2. Read the active config
+
+Open `codecept.conf.{js,ts,mjs,cjs}` (resolve via `package.json` scripts and CI workflows if multiple files exist — note the path; you'll pass it to `-c` in steps 3 and 4). Extract: which helper(s) and any non-default behaviour (browser, strict, navigation, base URL, viewport, env-driven values); which plugins (incl. anything `setCommonPlugins()` injects); AI provider + the env var its key requires; how environments are selected (`--config` vs `process.env.*` branching, plus any `setHeadlessWhen`-style mutations); page object names from `include`; any custom helpers (entries pointing at local files).
+
+### 3. List available actions
 
 ```sh
 npx codeceptjs list -c <config>          # every I.<method>, grouped by helper, with signature
@@ -117,19 +127,24 @@ npx codeceptjs list --action <name> -c <config>   # single action; I. prefix opt
 
 Run `list` against the discovered config before suggesting any method — especially in projects with custom helpers, where the available `I.*` surface differs from the built-in catalog. The CodeceptJS MCP server's `list_actions` tool returns the same data programmatically.
 
-### 3. List existing tests
+### 4. List existing tests
 
 ```sh
 npx codeceptjs dry-run -c <config>            # suite + test names that the config would load
 npx codeceptjs dry-run --steps -c <config>    # also prints queued I.* steps inside each test
 npx codeceptjs dry-run --grep "@smoke" -c <config>   # filter by name; --features / --tests narrow file kind
+npx codeceptjs dry-run --debug --grep '<test>' --numbers --no-ansi -c <config>   # numbered steps, no ANSI
 ```
 
-`dry-run` walks the test files the active config picks up and prints them without executing — confirming both **which tests exist** and (with `--steps`) **what each Scenario would do** before any browser spins up. For Gherkin step definitions specifically, `npx codeceptjs gherkin:steps -c <config>` lists registered step patterns.
+`dry-run` walks the test files the active config picks up and prints them without executing — confirming both **which tests exist** and (with `--steps`) **what each Scenario would do** before any browser spins up.
+
+`--numbers` (paired with `--debug`, `--steps`, or `--verbose`) prefixes each leaf step with a per-test 1-based index. The numbering matches the `pauseAt: N` parameter on the MCP `run_test` tool — so this is the canonical way to discover step indices for programmatic breakpoints. `--no-ansi` strips colors / ANSI escapes so the output is clean for LLM consumption or piping to other tools.
+
+For Gherkin step definitions specifically, `npx codeceptjs gherkin:steps -c <config>` lists registered step patterns.
 
 ## Report
 
-Short prose summary covering the items above. Flag env-driven values explicitly — don't claim a fixed value when it's `process.env.BROWSER || 'chromium'`. Flag conflicts (static `show: true` overridden by `setHeadlessWhen(CI)`; `auth` configured but the credential env vars are missing from the current shell or `.env.example`). If no config exists at the repo root and no `--config` is referenced anywhere, recommend `npx codeceptjs init .` and stop.
+Short prose summary covering the items above. Flag env-driven values explicitly — don't claim a fixed value when it's `process.env.BROWSER || 'chromium'`. Flag conflicts (static `show: true` overridden by `setHeadlessWhen(CI)`; `auth` configured but the credential env vars are missing from the current shell or `.env.example`). If no config exists at the repo root and no `--config` is referenced anywhere, recommend `npx codeceptjs init .` and stop. **If the project is on CodeceptJS 3.x or CommonJS, recommend the `codeceptjs-3-to-4-migration` skill and stop** — discovery output for a pre-4 project will misrepresent the available APIs.
 
 ## Pointers
 
