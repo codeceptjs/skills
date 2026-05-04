@@ -14,6 +14,8 @@ There's no single end goal — pick the use case that matches the situation. The
 ### Ensure aiTrace is on
 The whole skill leans on `output/trace_<TestName>_<hash>/trace.md` and its sibling artifacts. Confirm `plugins: { aiTrace: { enabled: true } }` in the active config (run `codeceptjs-fundamentals` if you don't already know). Without aiTrace there are screenshots and `pageInfo` dumps at most — useful but partial; suggest enabling and re-running before deep analysis.
 
+The MCP `run_step_by_step` tool is now interactive (pauses after every step; agent advances via `continue`) and no longer auto-writes a per-run artifact bundle. `aiTrace` is the only source of per-step trace files now — for ad-hoc `run_code` and `snapshot` calls you still get a single-shot artifact set under `output/trace_run_code_*` / `output/snapshot_*`.
+
 ### Locate traces
 Trace directories are `output/trace_<TestName>_<short-hash>/`; reruns produce a new dir per run. **When the right trace isn't obvious, sort by modification time and take the most recent** (`ls -dt`) — almost always the run you just kicked off.
 

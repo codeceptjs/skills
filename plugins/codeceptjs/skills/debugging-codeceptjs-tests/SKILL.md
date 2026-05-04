@@ -1,6 +1,6 @@
 ---
 name: debugging-codeceptjs-tests
-description: Use when a CodeceptJS 4 test is failing, flaky, or behaving unexpectedly — stack traces from `npx codeceptjs run`, intermittent failures, locator drift, timing issues, "works locally fails in CI". For AI agents the primary path is **MCP step-by-step** — `run_test` / `run_step_by_step` / `run_code` / `snapshot` against the live browser session, with `aiTrace` artifacts for prior actions. CLI debugging (`npx codeceptjs run --debug`, `DEBUG="codeceptjs:*"`) is the fallback for humans, CI repros, and framework-internal issues (recorder hangs, leaks, plugin races). Don't fix from the error message alone; capture page state and read it. Trigger on broken or flaky tests, run errors, "why does this fail", trace/screenshot/console mentions.
+description: Use when a CodeceptJS 4 test is failing, flaky, or behaving unexpectedly — stack traces from `npx codeceptjs run`, intermittent failures, locator drift, timing issues, "works locally fails in CI", "step through this test", "pause at step N", "set a breakpoint". For AI agents the primary path is **MCP with pause** — drop a `pause()` in the test (or pass `pauseAt: N` to `run_test` for a no-edit breakpoint), inspect via `run_code` / `snapshot` against the live browser, release with `continue`. Step indices for `pauseAt` come from `npx codeceptjs dry-run --debug --grep <test> --numbers --no-ansi`. CLI debugging (`npx codeceptjs run --debug`, `DEBUG="codeceptjs:*"`) is the fallback for humans, CI repros, and framework-internal issues (recorder hangs, leaks, plugin races). Don't fix from the error message alone; capture page state and read it. Trigger on broken or flaky tests, run errors, "why does this fail", trace/screenshot/console mentions, breakpoint/pause/step-through requests.
 ---
 
 # Debugging CodeceptJS 4 Tests
@@ -9,10 +9,10 @@ Failures lie. The error usually points at a step that's a side effect of somethi
 
 Two paths, picked by who's driving:
 
-- **MCP-first (for AI agents)** — drive the test through the MCP server. Each tool returns ARIA / URL / screenshot / console / storage artifacts. Step by step via `run_step_by_step`; ad-hoc inspection via `run_code` (which keeps the browser session alive after a failure); passive state capture between actions via `snapshot`.
+- **MCP-first (for AI agents)** — drive the test through the MCP server. In-test `pause()` and the `pauseAt: N` option on `run_test` both yield control back to the agent in-process — same `I` / browser the test is using. Inspect via `run_code` / `snapshot`, advance one step at a time via `run_step_by_step` + `continue`, release a pause via `continue`. `aiTrace` artifacts cover the prior steps.
 - **CLI fallback (for humans / CI / framework internals)** — `npx codeceptjs run --debug` for verbose framework output. Escalate to `DEBUG="codeceptjs:*"` when the *framework itself* looks at fault: recorder hangs, plugin races, event leaks, "step never ran". Use this path for CI repros, headless servers, and framework-internal bugs.
 
-In-test `pause()` is a **human** debugging tool — it opens a readline REPL on stdin. Don't add `pause()` to a test you're driving through MCP; the subprocess will hang waiting for keyboard input the agent can't supply. Use the MCP analog described in step 4 below.
+In-test `pause()` adapts to who's driving: at a TTY it opens the readline REPL; under MCP it yields control to the agent (same in-process `I` / browser); in a non-TTY non-MCP subprocess it prints a notice and resolves immediately so leftover `pause()` calls don't deadlock CI. **Adding `pause()` is now the primary MCP breakpoint** — drop it where you want to look, run via `run_test`, drive the live page through `run_code`, release with `continue`.
 
 ## Workflow
 
@@ -29,9 +29,10 @@ Add `--config codecept.ci.conf.js` if the failure is CI-specific. Confirm reprod
 ### 3. Pick a path
 
 **MCP (primary for AI agents):**
-- `run_test <test>` — runs a specific test in a subprocess; returns the JSON reporter result. Use to confirm a fix end-to-end.
-- `run_step_by_step <test>` — runs the test step by step and writes `output/trace_<TestName>_<hash>/trace.md` plus per-step screenshot, HTML, ARIA, console, storage. Use when you need granular per-step state.
-- `run_code <CodeceptJS lines>` — runs arbitrary CodeceptJS code in the live session. Returns the **value the code produced**, captures `console.log` / `info` / `warn` / `error` / `debug` output, and saves a final-state snapshot (URL, ARIA, HTML, screenshot, storage). Use to test a locator hypothesis or grab a value at the failure point.
+- `run_test <test>` — runs a specific test in-process; shares `I` / browser with `run_code` and `snapshot`. Returns the JSON reporter result on completion, **or** `{ status: 'paused', pausedAfter, page, suggestions }` if the test calls `pause()` or hits the optional `pauseAt: N` breakpoint. From a paused state, drive the live page via `run_code` / `snapshot` and release with `continue`.
+- `run_step_by_step <test>` — interactive: pauses after every step. After each `continue`, the test advances one step and re-pauses (or completes). Use when you want to watch the whole flow tick by; use `run_test` with `pauseAt: N` instead for a single targeted breakpoint.
+- `continue` — releases a paused test. After `pause()` or `pauseAt`: runs to completion (or to the next `pause()`). After `run_step_by_step`: advances one step.
+- `run_code <CodeceptJS lines>` — runs arbitrary CodeceptJS code in the live session (works fresh **and** while a test is paused — same container). Returns the **value the code produced**, captures `console.log` / `info` / `warn` / `error` / `debug` output, and saves a final-state snapshot (URL, ARIA, HTML, screenshot, storage). Use to test a locator hypothesis or grab a value at the failure point.
 - `snapshot` — captures current browser state without performing any action (URL, cookies, localStorage, HTML, ARIA, screenshot, console). Use between actions when you want to reason about what to do next without re-running anything.
 - `list_actions` — sanity-check that an `I.*` method exists on the active helper.
 
@@ -40,16 +41,29 @@ Add `--config codecept.ci.conf.js` if the failure is CI-specific. Confirm reprod
 - `npx codeceptjs run ... --verbose` — adds promise-queue / retry / timeout logs on top of `--debug`.
 - `DEBUG="codeceptjs:*" npx codeceptjs run ...` — turns on CodeceptJS's internal debug streams. Reach for this when `--debug` doesn't explain the failure: orphaned timers, event leaks, recorder hangs, plugin races, double-emitted events, "step disappeared from the queue". Narrow with namespaces: `codeceptjs:recorder` (promise queue), `codeceptjs:pause`, `codeceptjs:ai`, `codeceptjs:plugin:<name>`. Most user-level test failures don't need this — it's the framework-internal escape hatch.
 
-### 4. MCP analog of `pause()`
+### 4. Set a breakpoint with `pause()` or `pauseAt`
 
-`pause()` opens a stdin REPL that an AI client can't drive. The MCP equivalent is the same idea — *stop and look at state* — but it works through tools the agent already has:
+The MCP server installs an in-process pause handler at startup. Whenever a test running through `run_test` hits `pause()` (or completes the `pauseAt: N` step), control yields back to the agent on the same `I` / browser. There's no subprocess, no IPC, and `run_code` / `snapshot` work against the live page — exactly what a paused REPL would give you.
 
-1. **Run the test under MCP and let it fail** — `run_test` (or `run_step_by_step`). The browser session stays alive in that MCP session after the failure.
-2. **Inspect the failure point with `run_code`** in the same session — `await I.grabCurrentUrl()`, `await I.grabWebElement(...)`, `await I.seeElement({ role: 'dialog' })`, etc. The response carries URL + ARIA + console + storage, just like a paused REPL would show.
-3. **Read the prior actions from `aiTrace`** — `output/trace_<TestName>_<hash>/trace.md` lists every step with its artifacts, so you can see what the page looked like *before* the failure.
-4. **Use `snapshot`** between hypotheses if you want a clean state capture without re-running anything.
+Two ways to land at a breakpoint:
 
-For walking forward step by step (rather than landing at the failure), use the dedicated `run_step_by_step` tool — that's the proper "single-step" mode for an agent.
+- **In-test `pause()`** — drop `pause()` directly in the test where you want to look. Best when you're already editing the file or want to break inside a `within` / loop / hook.
+- **`pauseAt: N` on `run_test`** — programmatic, no test edit required. Pauses after the Nth leaf step completes.
+
+To pick `N`, list the steps with their indices:
+
+```bash
+npx codeceptjs dry-run --debug --grep '<scenario>' --numbers --no-ansi
+```
+
+Output is one numbered line per leaf step (1-based, per-test). The number on the line you want to stop *after* is the value to pass as `pauseAt`. `--no-ansi` strips colors so the output is clean for parsing.
+
+Once paused (`{ status: 'paused', pausedAfter, page, suggestions }`):
+
+1. **Inspect with `run_code`** — `await I.grabCurrentUrl()`, `await I.grabWebElement(...)`, `await I.seeElement({ role: 'dialog' })`. Each call returns URL + ARIA + console + storage from the live page.
+2. **Capture clean state with `snapshot`** between hypotheses — no action, just the artifact bundle.
+3. **Walk earlier steps via `aiTrace`** — `output/trace_<TestName>_<hash>/trace.md` has the per-step state for everything that ran before the breakpoint.
+4. **Release with `continue`** — runs to completion (or to the next `pause()`). For a step-by-step walk, use `run_step_by_step` instead of `run_test`; each `continue` then advances one step.
 
 ### 5. Read the trace
 Hand off to **codeceptjs-run-analysis** to walk `output/trace_<TestName>_<hash>/trace.md` and the per-step artifacts. Focus on the **first** failed step — late failures are usually side effects of an earlier silent miss. The run-analysis skill also covers grepping into large HTML, clustering errors across many traces, and comparing reruns when flakiness is in play.
@@ -69,7 +83,7 @@ Hand off to **codeceptjs-run-analysis** to walk `output/trace_<TestName>_<hash>/
 | Plugin misbehaves | `DEBUG="codeceptjs:plugin:<name>"` |
 
 ### 7. Verify the fix on the live page
-For agents driving MCP, use `run_code` to try the candidate fix in the live session **before editing the file**. If it works there, it'll work in the test. (Humans running with `--debug` at a TTY can use in-test `pause()` for the same purpose.)
+For agents driving MCP, use `run_code` to try the candidate fix in the live session **before editing the file**. If it works there, it'll work in the test. While paused (in-test `pause()` or `pauseAt`), `run_code` operates on the same `I` / browser the test is using, so a candidate replacement step can be tried in place. Humans running with `--debug` at a TTY can use in-test `pause()` for the same purpose at a readline REPL.
 
 ### 8. Apply and re-run
 Edit the test, then `npx codeceptjs run --grep '<scenario>' --steps`. Use **codeceptjs-run-analysis** to verify the trace looks right after the fix — and to confirm the failure didn't shift to another step. If the fix introduces a `waitFor*` or `step.opts`, leave a one-line `Why:` comment — those are the comments worth keeping.
@@ -82,10 +96,14 @@ Edit the test, then `npx codeceptjs run --grep '<scenario>' --steps`. Use **code
 | REPL on first failure | `npx codeceptjs run -p pause` (default `on=fail`) |
 | Single-step interactively | `npx codeceptjs run -p pause:on=step` |
 | Break on a file or URL | `pause:on=file:path=<file>;line=<N>` / `pause:on=url:pattern=<glob>` |
-| Step-by-step from an AI agent | MCP `run_step_by_step` |
-| Test a hypothesis on the live page (agent) | MCP `run_code` |
+| Programmatic breakpoint at step N (no test edit) | MCP `run_test` with `pauseAt: N` (discover N via `dry-run --numbers`) |
+| In-test breakpoint at a specific line | drop `pause()` in the test, then MCP `run_test` |
+| Step-by-step REPL from an AI agent | MCP `run_step_by_step`, then `continue` between steps |
+| Release a paused test | MCP `continue` |
+| Test a hypothesis on the live page (agent) | MCP `run_code` (works fresh **and** while paused) |
 | Capture state without acting (agent) | MCP `snapshot` |
 | Test a hypothesis on the live page (human, TTY) | in-test `pause()` + `npx codeceptjs run --debug` |
+| List steps with their indices (for `pauseAt`) | `npx codeceptjs dry-run --debug --grep '<test>' --numbers --no-ansi` |
 | Visual replay slideshow | `screenshot:slides=true` → `output/records.html` |
 | Auto-suggest fixes for broken locators | `heal` plugin + `--ai` (disabled in `--debug`) |
 | Diagnose framework-internal behaviour | `DEBUG="codeceptjs:*"` (or a specific namespace) |
@@ -139,7 +157,7 @@ If the trace shows a redirect to `/login` mid-test, or 401/403 in console, fix *
 
 - Fixing from the error message without reading the trace.
 - Editing the test before verifying the fix in `run_code` — you'll iterate without ground truth.
-- Adding `pause()` to a test you're about to drive through MCP — readline blocks on stdin and the subprocess hangs. Use `run_code` / `snapshot` / `aiTrace` artifacts instead.
+- Committing `pause()` calls. They're a debugging tool — remove (or replace with `pauseAt`) before merging. A `pause()` left in a test that runs in a non-TTY non-MCP CI subprocess will print a notice and skip, but it's still noise on every run.
 - Adding `waitFor*` blindly instead of identifying the real gating element from HTML/ARIA.
 - Leaving `I.wait(N)` (raw seconds) in committed tests — keep them only while debugging, then replace with the specific `waitFor*`.
 - Skipping the config check — `setHeadlessWhen(CI)` or env-driven URLs explain many "works locally fails in CI" reports.
