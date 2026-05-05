@@ -166,48 +166,14 @@ Flags worth knowing:
 - `--limit N` (default 20), `--snippet N` (default 500), `--full`, `--json`.
 - Exit codes: `0` matches, `1` no match, `2` invalid input/XPath — useful for scripted "did this locator break?" checks.
 
-### A match in HTML is necessary, not sufficient
+Use `codeceptq` to test locators against the snapshot **before** applying them via `run_code`. If a candidate matches, you've validated the locator string against the DOM as captured. It can still fail live — element not visible, removed by a re-render, or the snapshot is from a different step — so treat a hit as a green light to try, not a guarantee.
 
-`codeceptq` reads **static HTML** — the DOM as it was when `aiTrace` serialized it. A successful match means the locator *can* resolve against that snapshot. It does **not** mean the element will resolve in the running browser. Common gaps:
-
-- **Element no longer in the DOM** — the page navigated, re-rendered, or removed the node before the failing step ran.
-- **Hidden** — `display: none`, `visibility: hidden`, `opacity: 0`, `aria-hidden`, off-screen positioning, zero size. CSS isn't in `*_page.html` (cleaned by `formatHtml`), so codeceptq can't see visibility.
-- **Covered by an overlay** — modal, toast, sticky header. The element is hittable to the parser but not to a click.
-- **Different frame or shadow root** — codeceptq evaluates the snapshot as one tree; the live page may have iframes / shadow DOM that need `within({ frame })` or shadow piercing.
-- **Disabled or readonly** — fillField/click will fail even if the locator resolves.
-
-So treat a `codeceptq` hit as **"the locator string is well-formed against this captured DOM"**, then validate liveness via MCP `run_code`:
+When `codeceptq` returns multiple matches, **don't write a brittler XPath** — disambiguate with `step.opts({ elementIndex })`. Indexing is 1-based and follows the order `codeceptq` prints; supports `'first'`, `'last'`, and negatives.
 
 ```js
-await I.seeElement('<locator>')              // exists + visible
-await I.grabWebElement('<locator>').isEnabled()
-await I.grabWebElement('<locator>').getBoundingBox()  // zero-size → not really there
+I.click('Edit', step.opts({ elementIndex: 2 }))
+I.fillField('input', 'value', step.opts({ elementIndex: 'last' }))
 ```
-
-If `seeElement` passes, the locator is good. If `codeceptq` matched but `seeElement` fails, the gap is one of the categories above — fix with `waitForVisible`, `within({ frame })`, or scope the locator more tightly.
-
-### When `codeceptq` returns multiple matches
-
-If the snapshot shows N>1 results and the locator can't be made more specific without coupling the test to incidental markup, **disambiguate via `step.opts({ elementIndex })`** — don't write a brittler XPath:
-
-```js
-import { step } from 'codeceptjs'
-
-I.click('Edit', step.opts({ elementIndex: 2 }))      // 1-based, second match
-I.click('.row a', step.opts({ elementIndex: 'last' }))
-I.fillField('input', 'value', step.opts({ elementIndex: -1 }))  // negatives count from end
-```
-
-Indexing is **1-based** and follows document order — same order `codeceptq` prints. The `elementIndex` you pass `step.opts` is the line number in `codeceptq`'s output, not the source line in HTML. Special values: `'first'`, `'last'`, negatives from end, positives from start (zero is invalid).
-
-Workflow:
-
-1. `codeceptq 'Edit' --click --file output/trace_*/0003_*_page.html` — see how many matches and which ones.
-2. If 1 match: locator is unambiguous, no `step.opts` needed.
-3. If N matches and the right one is at position K: `I.click('Edit', step.opts({ elementIndex: K }))`.
-4. Run the test (or `run_code` while paused) to confirm the live element behaves as expected — see "necessary, not sufficient" above.
-
-For deeper inspection of the live element (state, position, children) when codeceptq isn't enough, hand off to **codeceptjs-exploration** (`I.grabWebElement` + `isEnabled`/`isVisible`/`getBoundingBox`).
 
 ## Native helper API escape hatch
 
