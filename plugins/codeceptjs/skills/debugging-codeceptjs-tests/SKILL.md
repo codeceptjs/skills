@@ -68,6 +68,8 @@ Once paused (`{ status: 'paused', pausedAfter, page, suggestions }`):
 ### 5. Read the trace
 Hand off to **codeceptjs-run-analysis** to walk `output/trace_<TestName>_<hash>/trace.md` and the per-step artifacts. Focus on the **first** failed step — late failures are usually side effects of an earlier silent miss. The run-analysis skill also covers grepping into large HTML, clustering errors across many traces, and comparing reruns when flakiness is in play.
 
+For locator-level questions on a saved snapshot ("would `.btn-primary` have matched here?", "is `Username` a field at step 7?") use **`codeceptq`** against the per-step `<NNNN>_<step>_page.html` — see the "Query trace HTML with `codeceptq`" section below. Faster feedback loop than `run_code` when you're iterating selector candidates.
+
 ### 6. Form a hypothesis
 
 | Symptom | Likely cause |
@@ -109,6 +111,7 @@ Edit the test, then `npx codeceptjs run --grep '<scenario>' --steps`. Use **code
 | Diagnose framework-internal behaviour | `DEBUG="codeceptjs:*"` (or a specific namespace) |
 | Inspect specific elements — state, markup, position, children | `I.grabWebElement` / `I.grabWebElements` (cross-helper WebElement API) |
 | Drop to native helper APIs when nothing else works | `I.usePlaywrightTo` / `I.usePuppeteerTo` / `I.useWebDriverTo` |
+| Verify a locator against a saved trace snapshot (offline) | `codeceptq <locator> --file output/trace_*/<NNNN>_<step>_page.html` |
 
 ## Waiting (a common cause of flakes)
 
@@ -130,6 +133,81 @@ Debug-specific reaches into that toolkit:
 - **Iframe content** — exploration's `inIframe` pattern; the failing step likely needs to be wrapped in `within({ frame })`.
 
 Prefer this over `usePlaywrightTo` / `useWebDriverTo` for inspection: same code across helpers, less boilerplate.
+
+## Query trace HTML with `codeceptq`
+
+`aiTrace` writes a per-step `<NNNN>_<step>_page.html` snapshot of the live DOM for every step (formatted so each element sits on its own line — line numbers map 1:1 to elements). To answer "would my locator have matched at step N?", use `codeceptq` — a CLI that resolves any CodeceptJS locator (CSS / XPath / fuzzy / semantic) against a saved HTML snapshot and prints the matched elements with their source lines.
+
+**Never load the page HTML into your context to inspect it manually.** Real-world `*_page.html` files are thousands of lines and burn context for nothing — `codeceptq` does the locator resolution and returns only the relevant elements. Reach for it instead of `Read`-ing the snapshot.
+
+```bash
+# does this CSS resolve?
+npx codeceptq '#submit-btn' --file output/trace_<TestName>_<hash>/0007_I_click_Submit_page.html
+
+# semantic field lookup against a saved snapshot
+npx codeceptq 'Email' --field --file output/trace_*/0003_*_page.html
+
+# semantic clickable, scoped to a context
+npx codeceptq 'Save' '.modal' --click --file output/trace_*/0005_*_page.html
+
+# pipe directly from stdin
+cat output/trace_*/0001_*_page.html | npx codeceptq './/form//input[@required]'
+
+# machine-readable for chained tooling
+npx codeceptq 'Username' --field --json --file output/trace_*/0002_*_page.html
+```
+
+What you get back: a count, the resolved XPath, and one entry per match with the **line number** in the snapshot file plus the element's outerHTML.
+
+Flags worth knowing:
+- `--field` / `--click` / `--checkable` / `--select` — force a CodeceptJS semantic strategy (label, button text, checkbox, option). Without a flag, the locator type is auto-detected (CSS if it starts with `#`/`.`/`[`; XPath if it starts with `//` or `./`; fuzzy text otherwise).
+- `--xpath` / `--css` — force interpretation when auto-detection wouldn't pick the right one (e.g., a bare tag name like `select.foo` without `--css` would be treated as fuzzy text).
+- `[context]` — second positional arg restricts matches to descendants of the context locator (e.g., `'Save' '.modal' --click`).
+- `--limit N` (default 20), `--snippet N` (default 500), `--full`, `--json`.
+- Exit codes: `0` matches, `1` no match, `2` invalid input/XPath — useful for scripted "did this locator break?" checks.
+
+### A match in HTML is necessary, not sufficient
+
+`codeceptq` reads **static HTML** — the DOM as it was when `aiTrace` serialized it. A successful match means the locator *can* resolve against that snapshot. It does **not** mean the element will resolve in the running browser. Common gaps:
+
+- **Element no longer in the DOM** — the page navigated, re-rendered, or removed the node before the failing step ran.
+- **Hidden** — `display: none`, `visibility: hidden`, `opacity: 0`, `aria-hidden`, off-screen positioning, zero size. CSS isn't in `*_page.html` (cleaned by `formatHtml`), so codeceptq can't see visibility.
+- **Covered by an overlay** — modal, toast, sticky header. The element is hittable to the parser but not to a click.
+- **Different frame or shadow root** — codeceptq evaluates the snapshot as one tree; the live page may have iframes / shadow DOM that need `within({ frame })` or shadow piercing.
+- **Disabled or readonly** — fillField/click will fail even if the locator resolves.
+
+So treat a `codeceptq` hit as **"the locator string is well-formed against this captured DOM"**, then validate liveness via MCP `run_code`:
+
+```js
+await I.seeElement('<locator>')              // exists + visible
+await I.grabWebElement('<locator>').isEnabled()
+await I.grabWebElement('<locator>').getBoundingBox()  // zero-size → not really there
+```
+
+If `seeElement` passes, the locator is good. If `codeceptq` matched but `seeElement` fails, the gap is one of the categories above — fix with `waitForVisible`, `within({ frame })`, or scope the locator more tightly.
+
+### When `codeceptq` returns multiple matches
+
+If the snapshot shows N>1 results and the locator can't be made more specific without coupling the test to incidental markup, **disambiguate via `step.opts({ elementIndex })`** — don't write a brittler XPath:
+
+```js
+import { step } from 'codeceptjs'
+
+I.click('Edit', step.opts({ elementIndex: 2 }))      // 1-based, second match
+I.click('.row a', step.opts({ elementIndex: 'last' }))
+I.fillField('input', 'value', step.opts({ elementIndex: -1 }))  // negatives count from end
+```
+
+Indexing is **1-based** and follows document order — same order `codeceptq` prints. The `elementIndex` you pass `step.opts` is the line number in `codeceptq`'s output, not the source line in HTML. Special values: `'first'`, `'last'`, negatives from end, positives from start (zero is invalid).
+
+Workflow:
+
+1. `codeceptq 'Edit' --click --file output/trace_*/0003_*_page.html` — see how many matches and which ones.
+2. If 1 match: locator is unambiguous, no `step.opts` needed.
+3. If N matches and the right one is at position K: `I.click('Edit', step.opts({ elementIndex: K }))`.
+4. Run the test (or `run_code` while paused) to confirm the live element behaves as expected — see "necessary, not sufficient" above.
+
+For deeper inspection of the live element (state, position, children) when codeceptq isn't enough, hand off to **codeceptjs-exploration** (`I.grabWebElement` + `isEnabled`/`isVisible`/`getBoundingBox`).
 
 ## Native helper API escape hatch
 
