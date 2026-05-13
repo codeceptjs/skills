@@ -1,6 +1,6 @@
 # CodeceptJS Skills
 
-AI agent skills for working with [CodeceptJS 4](https://codecept.io). Eight skills covering project orientation, authoring, debugging, refactoring, and CI auto-repair — all written against the [Agent Skills](https://agentskills.io) open standard.
+AI agent skills for working with [CodeceptJS 4](https://codecept.io). Ten skills covering project orientation, authoring, debugging, refactoring, migration, and CI auto-repair — all written against the [Agent Skills](https://agentskills.io) open standard.
 
 ## Install
 
@@ -41,6 +41,7 @@ If you can't run the CLI (locked-down environment, custom layout, etc.), each `<
 |---|---|
 | [`codeceptjs-fundamentals`](./codeceptjs-fundamentals/SKILL.md) | **Always run first.** Compact primer on CodeceptJS internals (helpers, `I`, DI container, `inject()`, custom helpers, plugins as hook listeners, the `await` rule), then reads the project's config and reports the active helper, plugins, env switching, and page objects. Routes 3.x / CommonJS projects to `codeceptjs-3-to-4-migration` before discovery. |
 | [`codeceptjs-3-to-4-migration`](./codeceptjs-3-to-4-migration/SKILL.md) | Project is on CodeceptJS 3.x or CommonJS — `package.json` pins `^3` or lacks `"type": "module"`, tests use `require()`/`module.exports`, or config references removed helpers/plugins (`Nightmare`, `autoLogin`, `tryTo`, `SoftExpectHelper`, …). Walks the upgrade end-to-end: Node bump, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals`, dep bumps, verify. |
+| [`migrate-from-cypress`](./migrate-from-cypress/SKILL.md) | Project is a Cypress suite — `cypress.config.*`, `cypress/e2e/**.cy.{js,ts}`, `cy.*` calls, `Cypress.Commands.add`. Walks the port to CodeceptJS 4 end-to-end: inventory shared logic, install the Playwright helper alongside Cypress, port the config, fold every `Cypress.Commands.add` into a single `WebExtra` custom helper exposing matching `I.*` verbs, port ad-hoc Cypress page-object modules to real page objects, convert specs (delegating per-file to `writing-codeceptjs-tests`), swap `cy.session` / `cy.fixture` / `cy.request` / `cy.intercept` for `auth` plugin / ES imports / REST helper / `I.mockRoute`, decommission Cypress. |
 | [`codeceptjs-auth`](./codeceptjs-auth/SKILL.md) | A test needs login or different user roles. Configures the `auth` plugin from the real login page HTML, with env-var credentials and `secret()`-wrapped passwords. |
 | [`codeceptjs-exploration`](./codeceptjs-exploration/SKILL.md) | Need to look at a page — read ARIA, inspect candidate elements, pick a stable locator. Covers the WebElement API and the broad-XPath candidate-discovery technique. Invoked by writing, debugging, and refactoring. |
 | [`codeceptjs-run-analysis`](./codeceptjs-run-analysis/SKILL.md) | After `codeceptjs run` — read `output/trace_*/` artifacts via bash tools to verify a fix, cluster errors across many failures, or diagnose flakiness across reruns. Invoked by writing, debugging, refactoring, and ci-fix. |
