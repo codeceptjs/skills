@@ -1,6 +1,6 @@
 ---
-name: migrate-from-cypress
-description: Port a Cypress test suite to CodeceptJS 4. Trigger when the project contains `cypress.config.{js,ts,mjs}`, a `cypress/` directory (`cypress/e2e/**/*.cy.{js,ts}`, `cypress/support/{commands,e2e}.{js,ts}`, `cypress/fixtures/`, `cypress/plugins/`, `cypress/component/`), `cypress` in `devDependencies`, or test code that calls `cy.*` (`cy.visit`, `cy.get`, `cy.contains`, `cy.session`, `cy.intercept`, `cy.request`, `cy.task`, `cy.fixture`, `cy.origin`, `cy.mount`), `Cypress.Commands.add(...)`, or `Cypress.env(...)`. Walks the port end-to-end: inventory shared logic (custom commands, ad-hoc page-object modules, shared selectors, fixtures, hooks), install CodeceptJS with the Playwright helper alongside Cypress, port the config, port every `Cypress.Commands.add` to a single custom `WebExtra` helper exposing `I.*` verbs that call Playwright API, port page-object-style modules to real page objects, convert spec files (handing off to `writing-codeceptjs-tests`), replace `cy.session` with the `auth` plugin, swap `cy.fixture` / `cy.request` / `cy.task` / `cy.intercept` for ES imports / REST helper / custom helper / `I.mockRoute`, then decommission Cypress.
+name: migrate-cypress-to-codeceptjs
+description: Port a Cypress test suite to CodeceptJS 4. Trigger when the project contains `cypress.config.{js,ts,mjs}`, a `cypress/` directory (`cypress/e2e/**/*.cy.{js,ts}`, `cypress/support/{commands,e2e}.{js,ts}`, `cypress/fixtures/`, `cypress/plugins/`, `cypress/component/`), `cypress` in `devDependencies`, or test code that calls `cy.*` (`cy.visit`, `cy.get`, `cy.contains`, `cy.session`, `cy.intercept`, `cy.request`, `cy.task`, `cy.fixture`, `cy.origin`, `cy.mount`), `Cypress.Commands.add(...)`, or `Cypress.env(...)`. Walks the port end-to-end: inventory shared logic (custom commands, ad-hoc page-object modules, shared selectors, fixtures, hooks), install CodeceptJS with the Playwright helper alongside Cypress, port the config, split `Cypress.Commands.add` into two custom helpers — `WebExtra` for browser-driven commands (Playwright `page` / `browserContext`) and `ApiExtras` for HTTP commands (REST / GraphQL helper, never `browserContext.request.*`) — port page-object-style modules to real page objects without inventing wrapper or assertion methods, convert spec files (handing off to `writing-codeceptjs-tests`), replace `cy.session` with the `auth` plugin, swap `cy.fixture` / `cy.request` / `cy.task` / `cy.intercept` for ES imports / REST helper / `ApiExtras` / `I.mockRoute`, then decommission Cypress.
 ---
 
 # Migrate Cypress → CodeceptJS 4
@@ -81,12 +81,29 @@ Map `cypress.config.{js,ts}` keys → `codecept.conf.{js,ts}`:
 
 ### 4. Port shared abstractions
 
-This is the bedrock. Do it before any spec rewrite — every spec rewrite shrinks because the verbs it needs (`I.doSmth(...)`, `loginPage.fill(...)`) already exist.
+This is the bedrock. Do it before any spec rewrite — every spec rewrite shrinks because the verbs it needs (`I.doSmth(...)`) already exist.
 
-**Hard rule for Cypress custom commands.** Every `Cypress.Commands.add('<name>', fn)` becomes a method on a single **custom helper** — convention name `WebExtra` (`lib/helpers/WebExtra.js`, `extends Helper`, registered under `helpers` in `codecept.conf.{js,ts}`). One async method per command, named identically, so `cy.doSmth(arg)` → `I.doSmth(arg)`. The helper reaches the underlying browser via `this.helpers['Playwright'].page` / `.browserContext` / `.browser` and calls the Playwright API directly:
+**Hard rule for Cypress custom commands.** Every `Cypress.Commands.add('<name>', fn)` becomes a method on a custom helper. **Split commands across two helpers by the kind of operation** — they have different access patterns and different correct APIs:
+
+- **`WebExtra`** (`lib/helpers/WebExtra.js`) for **browser-driven** commands — anything that needs the open page, DOM, `evaluate`, init scripts, storage, network-response waits. Reaches `this.helpers['Playwright'].page` / `.browserContext`.
+- **`ApiExtras`** (`lib/helpers/ApiExtras.js`) for **pure HTTP** commands — programmatic login, seed/teardown data, CRUD against an API. Reaches `this.helpers['REST']` (or `GraphQL`). See `node_modules/codeceptjs/docs/api.md` for REST helper configuration.
+
+One async method per Cypress command, named identically, so `cy.doSmth(arg)` → `I.doSmth(arg)`. Register both helpers under `helpers` in `codecept.conf.{js,ts}`.
+
+**Never call `this.helpers['Playwright'].browserContext.request.*` for API work.** That bypasses the REST + `JSONResponse` stack — no step logging, no `I.seeResponseCodeIsSuccessful` assertions, no shared headers, and the same verb ends up split between helpers. If the API needs the same auth as the browser, share cookies once at the top of the config:
+
+```js
+import { setSharedCookies } from '@codeceptjs/configure'
+setSharedCookies()
+```
+
+…or set `defaultHeaders` on the REST helper for token-based auth, or use `I.amBearerAuthenticated(secret(token))` per test. All three patterns are covered in `api.md`.
+
+**WebExtra example** — browser-driven commands (here `login` drives the UI form; the API-driven variant goes to `ApiExtras` below):
 
 ```js
 import Helper from '@codeceptjs/helper'
+import fs from 'node:fs/promises'
 
 export default class WebExtra extends Helper {
   async login(user, password) {
@@ -102,23 +119,67 @@ export default class WebExtra extends Helper {
     const { page } = this.helpers['Playwright']
     await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value])
   }
+
+  async stubWindowOpen() {
+    const { page } = this.helpers['Playwright']
+    await page.addInitScript(() => {
+      window.__lastOpenUrl = null
+      const orig = window.open
+      window.open = (url, ...rest) => {
+        window.__lastOpenUrl = url
+        return orig ? orig.call(window, 'about:blank', ...rest) : null
+      }
+    })
+  }
+
+  async writeJsonFile(filePath, data) {
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2))
+  }
 }
 ```
 
-Cypress code that called `cy.window().then(...)`, `cy.wrap(...)`, or imperative DOM tricks translates cleanly into `page.evaluate(...)`. Why a helper and not page objects or actor steps:
+**ApiExtras example** — pure HTTP commands routed through the REST helper:
 
-- Cypress commands are *global* verbs, not feature-bound. The CodeceptJS analogue is the actor surface, contributed by helpers.
-- Cypress commands frequently dip into low-level Chromium operations (cookies, storage, evaluate, network). Helpers can reach `this.helpers['Playwright']` directly; page objects only see `I`.
-- One `WebExtra` file mirrors `cypress/support/commands.js` 1:1 — port command by command, port complete.
+```js
+import Helper from '@codeceptjs/helper'
+
+export default class ApiExtras extends Helper {
+  async loginViaApi(email, password) {
+    const REST = this.helpers['REST']
+    await REST.sendPostRequest('/login_ajax', { email, password, remember: false })
+  }
+
+  async seedCourse(courseData) {
+    const REST = this.helpers['REST']
+    const { data } = await REST.sendPostRequest('/course', courseData)
+    return data
+  }
+}
+```
+
+**Helper code style** — applies to both:
+
+- All `import` statements at the **top of the file**. Never `const fs = await import('node:fs/promises')` inside a method.
+- Use built-in assertions (`I.seeResponseCodeIsSuccessful` for API, `I.seeElement` for browser), `ExpectHelper`, or factories from `codeceptjs/assertions` — **never** `if (cond) throw new Error('...')`. Failures must render as proper assertion errors. See `node_modules/codeceptjs/docs/assertions.md`.
+- If your `WebExtra` is growing a session-cache map keyed by user name, you are reimplementing the `auth` plugin — stop and let the `auth` plugin (phase 8) handle session reuse. The helper should expose `loginViaApi` / `login`; the plugin handles caching.
+
+Cypress code that called `cy.window().then(...)`, `cy.wrap(...)`, or imperative DOM tricks translates cleanly into `page.evaluate(...)` inside `WebExtra`. Cypress code that called `cy.request(...)` translates to `REST.sendXxxRequest(...)` inside `ApiExtras`.
 
 **Other destinations** from the phase 1 inventory:
 
-- **Cypress page-object-style module** → CodeceptJS **page object class** under `pages/`. Selector bundles become `this.fields = { ... }`; methods rewrite with `const { I } = inject()` at the top, calling `I.fillField`, `I.click`, and any `I.*` verb the `WebExtra` helper now contributes. Register under `include` in `codecept.conf.{js,ts}` so the page object auto-injects into Scenarios.
-- **Shared selector constants** → fields on the relevant page object. No free-floating `selectors.js` — CodeceptJS's idiom keeps selectors next to the methods that use them.
+- **Cypress page-object-style module** → CodeceptJS **page object class** under `pages/`. **Port conservatively** — keep only the methods the original module had; do not invent new wrappers during migration. Selector bundles become `this.fields = { ... }`; methods rewrite with `const { I } = inject()` at the top, calling `I.fillField`, `I.click`, and any `I.*` verb the `WebExtra` / `ApiExtras` helpers now contribute. Register under `include` in `codecept.conf.{js,ts}` so the page object auto-injects into Scenarios.
+
+  Page-object anti-patterns to avoid (unless the original Cypress code already had them):
+  - **Assertion methods** (`checkTitle() { I.seeElement(...) }`) — page objects are action verbs (`fillForm`, `submitOrder`); let assertions live in the test.
+  - **One-liner wrappers** around a single `I.click` / `I.see*` / `I.grabTextFrom` — the wrapper buys nothing over calling `I.*` from the test.
+  - **Methods used by only one test** — leave the steps in the test. Page objects exist for reuse.
+  - **`if (cond) throw new Error(...)`** in any method — use `I.see*`, `I.seeNumberOfElements`, `ExpectHelper`, or `codeceptjs/assertions` factories instead.
+
+- **Shared selector constants** → fields on the relevant page object. No free-floating `selectors.js`.
 - **Pure utility modules** that don't touch the browser → plain ES modules, imported where needed.
 - **Global hooks** → CodeceptJS `Before` / `BeforeSuite` in tests, or `bootstrap` / `teardown` in config for one-off setup.
 
-Sanity-check before moving on: `npx codeceptjs check -c <config>` must pass, and `npx codeceptjs list -c <config>` must show every Cypress command name as an `I.*` action contributed by `WebExtra`.
+Sanity-check before moving on: `npx codeceptjs check -c <config>` must pass, and `npx codeceptjs list -c <config>` must show every Cypress command name as an `I.*` action contributed by `WebExtra` or `ApiExtras` — whichever owns it.
 
 ### 5. Convert spec files
 
@@ -134,6 +195,29 @@ One file at a time, leaning on the abstractions from phase 4. Hand off the per-s
 | `before(...)` / `after(...)` | `BeforeSuite(...)` / `AfterSuite(...)` |
 | `cy.visit('/x')` | `I.amOnPage('/x')` |
 | `cy.login(u, p)` (custom command) | `I.login(u, p)` (from `WebExtra`) |
+
+**Iteration** — in tests, page objects, and helpers, use **`for...of`** for any loop containing `I.*` calls. Never `Array.prototype.forEach`. `.forEach` swallows the iteration callback's return — an `await` inside it does not block the outer function, and the CodeceptJS recorder may queue steps out of order or finish the Scenario before the loop is done. `for...of` keeps the loop sequential and lets you add `await` later without rewriting:
+
+```js
+for (const sort of testSort) {
+  I.click(locate(this.filterFormLabel).withText(sort))
+}
+```
+
+```js
+for (const row of await I.grabWebElements('.row')) {
+  const text = await row.getText()
+  I.expectNotEmpty(text)
+}
+```
+
+**Dry-run as you go.** After each batch of converted specs, run:
+
+```bash
+npx codeceptjs dry-run --steps -c <config>
+```
+
+It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
 
 ### 6. Locators
 
@@ -174,8 +258,10 @@ Cypress users often default to `[data-cy=...]`. Keep those attributes, but enabl
 | Cypress | CodeceptJS 4 |
 |---|---|
 | `cy.fixture('users.json')` | `import users from './fixtures/users.json' with { type: 'json' }` |
-| `cy.request('POST', '/api/x', body)` | `await I.sendPostRequest('/api/x', body)` (REST helper) |
-| `cy.task('seedDB')` | method on a custom helper, or `bootstrap` / `teardown` for one-off setup |
+| `cy.request('POST', '/api/x', body)` | `await I.sendPostRequest('/api/x', body)` via the **REST helper**; for reusable flows wrap in the `ApiExtras` helper from phase 4 |
+| `cy.task('seedDB')` | method on `ApiExtras` (if HTTP), a dedicated helper, or `bootstrap` / `teardown` |
+
+REST helper auth: `setSharedCookies()` from `@codeceptjs/configure` shares the browser session with REST so the same user is logged in on both sides; alternatively set `defaultHeaders` for static tokens or `I.amBearerAuthenticated(secret(token))` per test. See `node_modules/codeceptjs/docs/api.md` for the full configuration surface, including `JSONResponse` assertions (`I.seeResponseCodeIsSuccessful`, `I.seeResponseContainsKeys`, `I.seeResponseMatchesJsonSchema` with Zod).
 
 ### 10. Network mocking
 
@@ -188,7 +274,7 @@ Only after every spec is ported and CI is green: delete `cypress/`, `cypress.con
 ## Verify
 
 1. `npx codeceptjs check -c <config>` — config + helper + plugin sanity.
-2. `npx codeceptjs list -c <config>` — every ported Cypress command appears as an `I.*` action from `WebExtra`; every page object's methods appear.
+2. `npx codeceptjs list -c <config>` — every ported Cypress command appears as an `I.*` action from `WebExtra` or `ApiExtras`; every page object's methods appear.
 3. `npx codeceptjs dry-run --steps -c <config>` — every Scenario loads.
 4. Smoke run: `npx codeceptjs run --debug --grep '@smoke'`.
 5. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
@@ -199,9 +285,11 @@ Only after every spec is ported and CI is green: delete `cypress/`, `cypress.con
 - `node_modules/codeceptjs/docs/basics.md` — `I.*` vocabulary, locators, assertions, the `await` rule
 - `node_modules/codeceptjs/docs/playwright.md` — recommended helper; `mockRoute` for `cy.intercept`
 - `node_modules/codeceptjs/docs/locators.md` — semantic / ARIA / `locate()`
-- `node_modules/codeceptjs/docs/custom-helpers.md` — the `WebExtra` pattern (extending `Helper`, reaching `this.helpers['Playwright']`)
+- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns (extending `Helper`, reaching `this.helpers['Playwright']` / `this.helpers['REST']`)
+- `node_modules/codeceptjs/docs/api.md` — REST / GraphQL configuration, `setSharedCookies()`, `defaultHeaders`, `JSONResponse` assertions, Zod schemas
+- `node_modules/codeceptjs/docs/assertions.md` — built-in `see*` assertions, `ExpectHelper`, `codeceptjs/assertions` factories (use these instead of `if (cond) throw new Error(...)`)
 - `node_modules/codeceptjs/docs/pageobjects.md` — porting Cypress page-object-style modules
-- `node_modules/codeceptjs/docs/data.md` — REST helper for `cy.request`
+- `node_modules/codeceptjs/docs/data.md` — fixtures, data factories
 - `node_modules/codeceptjs/docs/sessions.md`, `auth.md` — multi-user + login reuse
 - `node_modules/codeceptjs/docs/effects.md` — `tryTo`, `retryTo`, `within`
 - `writing-codeceptjs-tests` — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
