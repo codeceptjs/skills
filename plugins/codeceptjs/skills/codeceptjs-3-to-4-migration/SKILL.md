@@ -1,6 +1,6 @@
 ---
 name: codeceptjs-3-to-4-migration
-description: Migrate a CodeceptJS 3.x project to 4.x. Trigger when `package.json` pins `codeceptjs` at 3.x or is missing `"type": "module"`, when test files still use CommonJS (`require()` / `module.exports`) against CodeceptJS APIs, when config references removed helpers (`Nightmare`, `Protractor`, `TestCafe`, `AI`, `SoftExpectHelper`) or removed plugins (`autoLogin`, `tryTo`, `retryTo`, `eachElement`, `commentStep`, `fakerTransform`, `enhancedRetryFailedStep`, `allure`, `htmlReporter`, `wdio`, `selenoid`, `screenshotOnFail`, `pauseOnFail`, `stepByStepReport`), or when 3.x APIs are in use (`ai.request` function, Joi schemas in `seeResponseMatchesJsonSchema`, `restart: 'browser'`, `I.retry()`, Playwright `customLocators`). Walks the project through Node + package upgrade, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals: true` adoption, dependency bumps, and the post-upgrade verify pass.
+description: Migrate a CodeceptJS 3.x project to 4.x. Trigger when `package.json` pins `codeceptjs` at 3.x or is missing `"type": "module"`, when test files still use CommonJS (`require()` / `module.exports`) against CodeceptJS APIs, when config references removed helpers (`Nightmare`, `Protractor`, `TestCafe`, `AI`, `SoftExpectHelper`, `Mochawesome`) or removed plugins (`autoLogin`, `tryTo`, `retryTo`, `eachElement`, `commentStep`, `fakerTransform`, `enhancedRetryFailedStep`, `allure`, `htmlReporter`, `wdio`, `selenoid`, `screenshotOnFail`, `pauseOnFail`, `stepByStepReport`), or when 3.x APIs are in use (`ai.request` function, Joi schemas in `seeResponseMatchesJsonSchema`, `restart: 'browser'`, `I.retry()`, `I.limitTime()`, Playwright `customLocators`). Walks the project through Node + package upgrade, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals: true` adoption, dependency bumps, and the post-upgrade verify pass.
 ---
 
 # Migrate CodeceptJS 3.x → 4.x
@@ -15,8 +15,9 @@ Detect *before* acting. Look for any of:
 
 - `package.json` lists `"codeceptjs": "^3"` / `"3.x"`, or has no `"type": "module"`.
 - Tests, page objects, helpers, or config use `require()` / `module.exports` against CodeceptJS.
-- Config still references removed helpers (`Nightmare`, `Protractor`, `TestCafe`, `AI`, `SoftExpectHelper`) or removed plugins (`autoLogin`, `tryTo`, `retryTo`, `eachElement`, `commentStep`, `fakerTransform`, `enhancedRetryFailedStep`, `allure`, `htmlReporter`, `wdio`, `selenoid`, `screenshotOnFail`, `pauseOnFail`, `stepByStepReport`).
-- 3.x APIs: `ai.request`, Joi schemas in `seeResponseMatchesJsonSchema`, `restart: 'browser'`, `I.retry()`, Playwright `customLocators`, `I.softExpect*` / `I.flushSoftAssertions`.
+- Config still references removed helpers (`Nightmare`, `Protractor`, `TestCafe`, `AI`, `SoftExpectHelper`, `Mochawesome`) or removed plugins (`autoLogin`, `tryTo`, `retryTo`, `eachElement`, `commentStep`, `fakerTransform`, `enhancedRetryFailedStep`, `allure`, `htmlReporter`, `wdio`, `selenoid`, `screenshotOnFail`, `pauseOnFail`, `stepByStepReport`).
+- 3.x APIs: `ai.request`, Joi schemas in `seeResponseMatchesJsonSchema`, `restart: 'browser'`, `I.retry()`, `I.limitTime()`, Playwright `customLocators`, `I.softExpect*` / `I.flushSoftAssertions`.
+- `--reporter mochawesome` in scripts/CI, or `mochawesome` in `package.json` / `mocha.reporterOptions`.
 
 If none of these hint at 3.x, the project is likely on 4.x already — hand back to `codeceptjs-fundamentals`.
 
@@ -47,22 +48,37 @@ Phases run in order. Commit at each boundary so any regression is bisectable.
 | Helper `Nightmare` / `Protractor` / `TestCafe` | `Playwright`, `Puppeteer`, or `WebDriver`. |
 | Helper `AI` | Top-level `ai:` config + `aiTrace` plugin. |
 | Helper `SoftExpectHelper` | `import { hopeThat } from 'codeceptjs/effects'`; call `hopeThat.noErrors()` at end of scenario. |
+| Helper `Mochawesome` | **Stop and ask the user** — see "Mochawesome decision" below. Do not silently delete it. |
 | Plugin `autoLogin` | `auth` plugin (see the `codeceptjs-auth` skill). |
 | Plugin `tryTo` / `retryTo` | `import { tryTo, retryTo } from 'codeceptjs/effects'` |
 | Plugin `eachElement` | `import { eachElement } from 'codeceptjs/els'` |
 | Plugin `commentStep` | `import step from 'codeceptjs/steps'` → `step.section('name')` / `step.endSection()` |
 | Plugin `fakerTransform` | `import { faker } from '@faker-js/faker'` directly in tests. |
 | Plugin `enhancedRetryFailedStep` | Renamed to `retryFailedStep`. |
-| Plugin `allure` / `htmlReporter` | External reporter (Mochawesome, `@testomatio/reporter`). |
+| Plugin `allure` / `htmlReporter` | `@testomatio/reporter` (HTML pipe). For JUnit XML, the `junitReporter` plugin. |
 | Plugin `wdio` / `selenoid` | Configure via `helpers.WebDriver`, or run externally. |
 | Plugin `screenshotOnFail` / `pauseOnFail` / `stepByStepReport` | Renamed `screenshot` / `pause` / `screenshot` with `slides: true`. Old names still resolve but emit a deprecation warning. |
+
+#### Mochawesome decision
+
+The bundled `Mochawesome` **helper** is removed in 4.x (the helper class, the `mochawesome` dependency, and the worker report-dir wiring). The `mochawesome` **reporter** itself still works — it is a stock Mocha reporter and never needed CodeceptJS to bundle it.
+
+This is a **user choice — do not pick for them**. When you detect Mochawesome (the helper in `helpers:`, `--reporter mochawesome`, or `mochawesome` in `package.json`/`mocha.reporterOptions`), stop and ask which path they want:
+
+1. **Switch to `@testomatio/reporter` (recommended).** Richer HTML report (steps, screenshots, videos, traces), worker-safe, no helper or internal coupling. `npm install --save-dev @testomatio/reporter`, enable the `testomatio` plugin, run with `TESTOMATIO_DISABLE_UPLOAD=1`. For JUnit XML add the `junitReporter` plugin. This is the path to recommend.
+2. **Keep Mochawesome — report only.** Remove the `Mochawesome` helper from `helpers:`, keep `npm i -D mochawesome` and `--reporter mochawesome --reporter-options reportDir=output`. Loses the auto-embedded failure screenshots the helper provided.
+3. **Keep Mochawesome — with embedded screenshots.** Remove the helper from `helpers:` and re-create it as a **project-local custom helper** that wraps `mochawesome/addContext` (a faithful port is in the migration guide, section "Keeping Mochawesome"). Flag the two caveats: it imports non-semver-stable `codeceptjs/lib/*` internals (pin the version), and the screenshot-plugin filename sync is no longer automatic (set `uniqueScreenshotNames` identically on the helper and the `screenshot` plugin).
+
+In all cases also: remove `mochawesome` report-dir handling from any custom worker scripts, and replace any reliance on `I.addMochawesomeContext()` (only option 3 keeps it).
+
+Present options 1–3 explicitly and let the user decide before changing anything. Default the recommendation to option 1. The full reference (before/after configs + the custom-helper port) is in `node_modules/codeceptjs/docs/migration-4.md` → "Mochawesome → Testomat.io Reporter".
 
 ### 4. Update changed APIs
 
 - **AI config** — delete the `request` function. Install Vercel AI SDK + provider (`npm install ai @ai-sdk/openai`) and set `ai: { model: openai('gpt-5') }`. Same shape for `@ai-sdk/anthropic`, `@ai-sdk/google`, etc.
 - **JSON schemas** — `I.seeResponseMatchesJsonSchema()` now uses Zod, not Joi. Rewrite (`Joi.object().keys({...})` → `z.object({...})`, `Joi.string().required()` → `z.string()`, etc.) and `npm uninstall joi`.
 - **Playwright** — replace `restart: 'browser'` with `'session'` (default), `'context'`, or `'keep'`. Drop `customLocators` config; use the `customLocator` plugin or ARIA locators (`{ role: 'button', name: 'Submit' }`).
-- **`I.retry()`** — deprecated. Use `import step from 'codeceptjs/steps'` then `I.click('Submit', step.retry(3))` / `step.timeout(10)` / `step.opts({ elementIndex: 2 })`.
+- **`I.retry()` / `I.limitTime()`** — **removed** (not just deprecated). Replace with the step options API: `import step from 'codeceptjs/steps'`, then pass the config as the **last argument** of the step. `I.retry(3).click('Submit')` → `I.click('Submit', step.retry(3))`; `I.limitTime(10).fillField('Email', x)` → `I.fillField('Email', x, step.timeout(10))`. Also `step.opts({ elementIndex: 2 })`. Behavior is unchanged except the option no longer leaks onto the following step. `recorder.retry()` is unaffected (custom helpers only).
 - **`within` and `session`** — no longer global. `import { within, session } from 'codeceptjs'` (or `within` from `codeceptjs/effects`). Both return Promises — `await` when you need the return value.
 - **Subpath imports** — `codeceptjs/effects`, `codeceptjs/els`, `codeceptjs/steps`, `codeceptjs/store`, `codeceptjs/assertions`. See the migration guide for the full list.
 - **`tryTo` / `hopeThat`** — return `Promise<boolean>` (the 3.x `Promise<T | false>` shape is gone).
@@ -83,7 +99,7 @@ Run, in order:
 2. `npx codeceptjs run --debug` on a small smoke scenario. Confirm steps execute and the report is sane.
 3. `npx codeceptjs run-workers 2` — confirms the worker event dispatcher fires per-test events the same way it does in single-process mode (4.x change).
 4. TypeScript users: confirm error stack traces point at `.ts` source lines (proves `tsx` is loaded, not `ts-node/esm`).
-5. Grep the repo for `tryTo(`, `retryTo(`, `eachElement(`, `commentStep(`, `softExpect`, `I.softExpect`, `Joi.`, `restart: 'browser'`, `I.retry(` — none should remain except inside imports of the new subpaths.
+5. Grep the repo for `tryTo(`, `retryTo(`, `eachElement(`, `commentStep(`, `softExpect`, `I.softExpect`, `Joi.`, `restart: 'browser'`, `I.retry(`, `I.limitTime(`, and (unless the user chose to keep it) `Mochawesome` / `--reporter mochawesome` — none should remain. `step.retry(` / `step.timeout(` passed as a step argument is the expected replacement, not a leftover.
 6. If the project used `autoLogin`: confirm the `auth` plugin restores sessions and roles.
 
 ## Pointers
