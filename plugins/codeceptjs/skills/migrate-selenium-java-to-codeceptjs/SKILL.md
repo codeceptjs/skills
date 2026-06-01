@@ -1,6 +1,6 @@
 ---
 name: migrate-selenium-java-to-codeceptjs
-description: Port a Selenium WebDriver or Selenide (Java) test suite to CodeceptJS 4. Trigger when the project contains `pom.xml` declaring `<artifactId>selenium-java</artifactId>` / `<artifactId>selenide</artifactId>` / `<artifactId>webdrivermanager</artifactId>`, `build.gradle` / `build.gradle.kts` with `org.seleniumhq.selenium:selenium-java` or `com.codeborne:selenide`, a `src/test/java/` tree with `*Test.java` / `*IT.java` / `*Tests.java` / `*Steps.java`, imports from `org.openqa.selenium.*` (`WebDriver`, `WebElement`, `By`, `WebDriverWait`, `ExpectedConditions`, `Actions`, `JavascriptExecutor`, `Select`, `Keys`) or `com.codeborne.selenide.*` (`Selenide`, `SelenideElement`, `Configuration`, `Condition`, `ElementsCollection`), JUnit 5 / 4 or TestNG annotations (`@Test`, `@BeforeEach`, `@AfterEach`, `@BeforeAll`, `@BeforeMethod`, `@BeforeClass`, `@DataProvider`, `@ParameterizedTest`, `@FindBy`, `@FindAll`), `PageFactory.initElements(...)`, `WebDriverManager.*.setup()`, `new ChromeDriver(...)` / `new RemoteWebDriver(...)`, `Selenide.open(...)`, `$(...).shouldBe(...)` / `$$(...).filter(...)` chains, or Cucumber-JVM step defs (`@Given` / `@When` / `@Then` from `io.cucumber.java.en.*`). Walks the port end-to-end: inventory page objects (almost always present, often `@FindBy`-driven), shared `*Helper` / `*Manager` classes, JUnit/TestNG hooks and listeners, data providers, Cucumber step defs; install CodeceptJS with the Playwright helper in a parallel directory (the Java suite keeps running through the transition); port the config (Maven/Gradle deps → `package.json`, Selenide `Configuration.*` / Selenium capabilities → `helpers.Playwright.*`); split shared Java helpers into `WebExtra` (browser-driven — `JavascriptExecutor` bodies become `page.evaluate`) and `ApiExtras` (RestAssured / Apache HttpClient → REST helper, never `browserContext.request.*`); port `@FindBy`-driven page objects to CodeceptJS page objects without inventing assertion/one-liner wrappers; **drop explicit wait code** (`WebDriverWait`, `ExpectedConditions.*`, Selenide `.shouldBe(visible)` / `.shouldHave(text(...))` chains) — CodeceptJS auto-waits; translate `By.X(...)` / `@FindBy(...)` locators to semantic strings / ARIA / `locate()` / `{ css }`; convert specs (handing off to `writing-codeceptjs-tests`), mapping JUnit 5 / JUnit 4 / TestNG annotations to `Feature` / `Scenario` / `Before` / `BeforeSuite` / `After` / `AfterSuite` and `@DataProvider` / `@ParameterizedTest` to `Data(...).Scenario(...)`; swap any custom `LoginHelper` / cookie-based session reuse for the `auth` plugin; swap WireMock client-side stubs for `I.mockRoute` (keep WireMock as a sidecar if backend mocking is needed); for Cucumber-JVM, keep `.feature` files and rewrite step defs in JS via CodeceptJS BDD; then decommission the Java suite.
+description: Port a Selenium WebDriver or Selenide (Java) test suite to CodeceptJS 4. Trigger when the project contains `pom.xml` declaring `<artifactId>selenium-java</artifactId>` / `<artifactId>selenide</artifactId>` / `<artifactId>webdrivermanager</artifactId>`, `build.gradle` / `build.gradle.kts` with `org.seleniumhq.selenium:selenium-java` or `com.codeborne:selenide`, a `src/test/java/` tree with `*Test.java` / `*IT.java` / `*Tests.java` / `*Steps.java`, imports from `org.openqa.selenium.*` (`WebDriver`, `WebElement`, `By`, `WebDriverWait`, `ExpectedConditions`, `Actions`, `JavascriptExecutor`, `Select`, `Keys`) or `com.codeborne.selenide.*` (`Selenide`, `SelenideElement`, `Configuration`, `Condition`, `ElementsCollection`), JUnit 5 / 4 or TestNG annotations (`@Test`, `@BeforeEach`, `@AfterEach`, `@BeforeAll`, `@BeforeMethod`, `@BeforeClass`, `@DataProvider`, `@ParameterizedTest`, `@FindBy`, `@FindAll`), `PageFactory.initElements(...)`, `WebDriverManager.*.setup()`, `new ChromeDriver(...)` / `new RemoteWebDriver(...)`, `Selenide.open(...)`, `$(...).shouldBe(...)` / `$$(...).filter(...)` chains, or Cucumber-JVM step defs (`@Given` / `@When` / `@Then` from `io.cucumber.java.en.*`). Walks the port end-to-end: inventory page objects (almost always present, often `@FindBy`-driven), shared `*Helper` / `*Manager` classes, JUnit/TestNG hooks and listeners, data providers, Cucumber step defs; install CodeceptJS in a parallel directory with the **WebDriver helper as the default** (most native target — same W3C protocol the Java suite already speaks); no driver setup is needed because WebdriverIO v9 auto-starts the matching browser driver, with **Docker Selenium (Selenoid / `selenium/standalone-chrome`) only as a fallback** for parallel/CI/Grid runs per `codeceptjs-fundamentals` and `node_modules/codeceptjs/docs/webdriver.md § "Selenium in Docker (Selenoid)"`; port the config (Maven/Gradle deps → `package.json`, Selenide `Configuration.*` / Selenium capabilities → `helpers.WebDriver.*`); split shared Java helpers into `WebExtra` (browser-driven — `JavascriptExecutor` bodies become `browser.execute(...)` via `this.helpers['WebDriver'].browser`) and `ApiExtras` (RestAssured / Apache HttpClient → REST helper, never via the browser helper); port `@FindBy`-driven page objects to CodeceptJS page objects without inventing assertion/one-liner wrappers; **drop explicit wait code** (`WebDriverWait`, `ExpectedConditions.*`, Selenide `.shouldBe(visible)` / `.shouldHave(text(...))` chains) — CodeceptJS auto-waits via `smartWait`; translate `By.X(...)` / `@FindBy(...)` locators to semantic strings / ARIA / `locate()` / `{ css }`; convert specs (handing off to `writing-codeceptjs-tests`), mapping JUnit 5 / JUnit 4 / TestNG annotations to `Feature` / `Scenario` / `Before` / `BeforeSuite` / `After` / `AfterSuite` and `@DataProvider` / `@ParameterizedTest` to `Data(...).Scenario(...)`; swap any custom `LoginHelper` / cookie-based session reuse for the `auth` plugin; keep WireMock as a sidecar for client-side stubs while on WebDriver (WebDriver has no native network interception); for Cucumber-JVM, keep `.feature` files and rewrite step defs in JS via CodeceptJS BDD; then decommission the Java suite. Once the WebDriver suite is green, propose the **optional Playwright swap** (faster, cross-browser from one config, native `I.mockRoute`) — mechanical config change, test code unchanged.
 ---
 
 # Migrate Selenium / Selenide (Java) → CodeceptJS 4
@@ -10,7 +10,7 @@ This migration is more than a syntax port — every file changes language. Java 
 Three foundational differences to internalize:
 
 1. **Tests read sequentially without explicit waits.** CodeceptJS auto-queues every `I.*` call onto an internal recorder and waits on DOM/element stability automatically. Selenium's `WebDriverWait` + `ExpectedConditions.*` boilerplate goes to zero; Selenide's `.shouldBe(visible)` / `.shouldHave(text(...))` chains usually collapse into the action itself (`I.click('Save')` waits, clicks, asserts). `await` in CodeceptJS is reserved for grabs (`await I.grabTextFrom(...)`) — on plain actions it works but isn't recommended. **This is the single biggest visible change in spec files.**
-2. **Helpers, not `WebDriver` / `driver`.** `I.*` dispatches to a configured helper. **Playwright recommended** (modern, fast, multi-browser via one config); **WebDriver** is also available if the suite must keep running against a Selenium Grid — test code is identical either way.
+2. **Helpers, not `WebDriver` / `driver`.** `I.*` dispatches to a configured helper. **Default to the WebDriver helper** — it speaks the same W3C WebDriver protocol your Java suite already speaks, so the migration is most native: same Selenium server, same browser drivers, same capabilities, same Grid if you have one. Once the suite is green on WebDriver, you can swap in the **Playwright** helper (modern, faster, less flaky, native multi-browser via one config) by changing one helper block — the test code is identical either way.
 3. **First-class abstractions.** Page objects, the `auth` plugin, multi-user `session(...)`, custom helpers, and the `customLocator` plugin are built in. Java suites already centralise these (`PageFactory`, `LoginHelper`, `DriverManager`); the migration consolidates them onto the framework's idioms instead of carrying the Java-specific glue forward.
 
 Authoritative references: `node_modules/codeceptjs/docs/basics.md`, `locators.md`, `playwright.md`, `webdriver.md`, `custom-helpers.md`, `pageobjects.md`.
@@ -35,7 +35,7 @@ Be honest up-front:
 
 - **Java language features in test code** — generics, streams, lambdas, custom exception hierarchies, AspectJ weaving, JUnit `@ExtendWith` extensions, TestNG `IInvokedMethodListener` listeners. These re-express as plain JS — usually shorter, but pick the simplest port, not a faithful translation.
 - **Maven / Gradle build phases tied to tests** — pre/post integration phases, profile-driven test exclusions, surefire-failsafe split. Re-implement with npm scripts and CodeceptJS `--grep` / `tag` filters.
-- **WebDriver Grid configuration** if you stay on Playwright. The recommended path is local Playwright (Chromium / Firefox / WebKit) plus parallel workers; the WebDriver helper remains available for teams that must keep an existing Selenium Grid.
+- **Client-side network interception** under the default WebDriver helper. WebDriver has no equivalent to Playwright's `I.mockRoute(...)`. While on WebDriver, keep WireMock (or any proxy / service-virtualisation tool) as a sidecar. After the optional Playwright swap, port stubs to `I.mockRoute(...)` if desired.
 - **Custom Selenium `EventFiringWebDriver` / Selenide event listeners** — CodeceptJS uses event hooks (`event.test.before`, `event.step.failed`) and the `aiTrace` plugin instead; reimplement against those if a listener was load-bearing.
 - **Java-specific reporting (Allure annotations on test methods, ExtentReports, ReportPortal Java agents)** — switch to a CodeceptJS reporter. `@testomatio/reporter` is the most direct equivalent for dashboards; Allure has a CodeceptJS adapter for teams that must keep Allure formats.
 - **Cucumber-JVM step-def language and Hooks** — feature files port as-is, step defs are rewritten in JS via CodeceptJS BDD. Java-specific glue (`@ScenarioScope`, PicoContainer DI) does not.
@@ -75,27 +75,72 @@ mkdir e2e && cd e2e
 npx codeceptjs init
 ```
 
-Pick the **Playwright** helper. Pick **WebDriver** instead only if the team must keep running against a Selenium Grid — the test code is identical either way. The Java suite keeps running through CI in parallel, so coverage stays green until the port is complete.
+**Pick the WebDriver helper.** This is the native target for a Selenium-Java port — same W3C protocol, same capabilities, and the same Grid if you have one. The Java suite keeps running through CI in parallel, so coverage stays green until the port is complete.
+
+**No driver setup needed by default.** The WebDriver helper runs on WebdriverIO v9, which auto-downloads and starts the matching browser driver on the fly. You do **not** install Chromedriver / Geckodriver, run a Selenium server, or set `host` / `port`. Just configure the helper and run — nothing new is required:
+
+```js
+// codecept.conf.js
+helpers: {
+  WebDriver: {
+    url: 'https://your-app.example.com',
+    browser: 'chrome',
+    windowSize: '1280x720',
+    smartWait: 5000,
+    desiredCapabilities: {
+      'goog:chromeOptions': { args: ['--disable-gpu', '--no-sandbox'] },
+    },
+  },
+},
+```
+
+The helper starts a local driver only when no connection info (`host` / `port`) is set — so leaving them out is what enables auto-management.
+
+`smartWait` gives you Selenide-equivalent implicit waiting on every locator lookup; with auto-retries on top, almost every `WebDriverWait` / `ExpectedConditions.*` line from the Java suite disappears.
+
+**Fallback: run Selenium in Docker.** Only needed when you want parallel/isolated runs, a pinned browser version, CI without a local browser, or an existing Grid — the convention `codeceptjs-fundamentals` and `node_modules/codeceptjs/docs/webdriver.md § "Selenium in Docker (Selenoid)"` describe. Start a container and add `host` / `port` to the helper block (which then disables auto-management and points at the container instead):
+
+```bash
+# Selenoid (parallel-friendly) — see https://aerokube.com/selenoid for full setup
+docker run -d --name selenoid -p 4444:4444 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $PWD/selenoid:/etc/selenoid aerokube/selenoid:latest-release
+
+# or the simplest single-browser option
+docker run -d --name selenium -p 4444:4444 --shm-size=2g \
+  selenium/standalone-chrome:latest
+```
+
+```js
+// add to the WebDriver block only when using the Docker/Grid fallback
+host: '127.0.0.1',
+port: 4444,
+```
+
+**Smoke-test the install before any porting.** `npx codeceptjs run --steps` with a stub Scenario (`Scenario('boot', ({ I }) => I.amOnPage('/'))`) must open a browser and pass. Fix driver / capability / container issues here, not after you've ported abstractions.
+
+**After the suite is green: consider Playwright.** Once the migration is complete and tests are stable on WebDriver, swap the helper to gain cross-browser coverage (Chromium / Firefox / WebKit) from one config, `I.mockRoute(...)` network mocking, and roughly 2-3× faster runs. The migration is mechanical — replace the `WebDriver` helper block with a `Playwright` block (see `playwright.md`), stop the Docker fallback if you were using it, rerun. Test code stays identical. **Don't do this until WebDriver-green** — debugging two new variables at once (helper + ported tests) is wasted effort.
 
 ### 3. Port the config
 
-Map Java config sources → `codecept.conf.{js,ts}`:
+Map Java config sources → `codecept.conf.{js,ts}`. **Primary target: `WebDriver` helper** (Playwright alternates shown for the later swap):
 
-| Java source | CodeceptJS 4 (`Playwright` helper) |
-|---|---|
-| `Configuration.baseUrl` (Selenide) | `helpers.Playwright.url` |
-| `Configuration.browser = "chrome"` | `helpers.Playwright.browser: 'chromium'` |
-| `Configuration.headless = true` | `helpers.Playwright.show: false` (or `setHeadlessWhen(CI)`) |
-| `Configuration.timeout` / `pageLoadTimeout` | `helpers.Playwright.waitForTimeout` / `timeout` |
-| `Configuration.browserSize = "1280x720"` | `helpers.Playwright.windowSize: '1280x720'` |
-| Selenium `ChromeOptions().addArguments(...)` | `helpers.Playwright.chromium.args` / `launchOptions.args` |
-| `WebDriverManager.*.setup()` | drop — Playwright manages browsers |
-| `RemoteWebDriver` URL | `helpers.WebDriver.host` / `port` (if using WebDriver helper) |
-| Maven `surefire` / `failsafe` `<systemPropertyVariables>` | `process.env.*` |
-| `pom.xml` / `build.gradle` test deps | `package.json` `devDependencies` (`codeceptjs`, `playwright`, optional plugins) |
-| `@Test(retryAnalyzer = ...)` / Selenide retry | top-level `retry: N` |
-| `@Test(timeOut = 30000)` (TestNG) | per-Scenario `Scenario(...).timeout(30)` |
-| Allure on test methods | swap for `@testomatio/reporter` or Allure CodeceptJS adapter |
+| Java source | CodeceptJS 4 (`WebDriver` helper — default) | Playwright (later swap) |
+|---|---|---|
+| `Configuration.baseUrl` (Selenide) | `helpers.WebDriver.url` | `helpers.Playwright.url` |
+| `Configuration.browser = "chrome"` | `helpers.WebDriver.browser: 'chrome'` | `helpers.Playwright.browser: 'chromium'` |
+| `Configuration.headless = true` | inject `--headless` into `desiredCapabilities['goog:chromeOptions'].args` (or use `setHeadlessWhen(CI)`) | `helpers.Playwright.show: false` |
+| `Configuration.timeout` / Selenium implicit waits | `helpers.WebDriver.smartWait` (auto-retry on every locator lookup) | `helpers.Playwright.waitForTimeout` |
+| `pageLoadTimeout` | `helpers.WebDriver.timeouts['page load']` | `helpers.Playwright.timeout` |
+| `Configuration.browserSize = "1280x720"` | `helpers.WebDriver.windowSize: '1280x720'` | `helpers.Playwright.windowSize: '1280x720'` |
+| `ChromeOptions().addArguments(...)` | `desiredCapabilities['goog:chromeOptions'].args` | `chromium.args` / `launchOptions.args` |
+| `WebDriverManager.*.setup()` | drop — WebdriverIO v9 auto-manages the driver (no setup); Docker only if using the fallback | drop — Playwright manages browsers |
+| `RemoteWebDriver` URL → Selenium Grid | add `helpers.WebDriver.host` / `port` to point at the Grid / Selenoid (fallback path) | drop Grid — Playwright runs locally |
+| Maven `surefire` / `failsafe` `<systemPropertyVariables>` | `process.env.*` | `process.env.*` |
+| `pom.xml` / `build.gradle` test deps | `package.json` `devDependencies` (`codeceptjs`, `webdriverio`, optional plugins) | `package.json` (`codeceptjs`, `playwright`) |
+| `@Test(retryAnalyzer = ...)` / Selenide retry | top-level `retry: N` | top-level `retry: N` |
+| `@Test(timeOut = 30000)` (TestNG) | per-Scenario `Scenario(...).timeout(30)` | per-Scenario `Scenario(...).timeout(30)` |
+| Allure on test methods | `@testomatio/reporter` or the Allure CodeceptJS adapter | same |
 
 ### 4. Port shared abstractions
 
@@ -103,12 +148,12 @@ This is the bedrock. Do it before any spec rewrite — every spec rewrite shrink
 
 **Hard rule for shared helper classes.** Every method on a Java `*Helper` / `*Util` / `*Manager` class becomes a method on a custom CodeceptJS helper. **Split across two helpers by the kind of operation** — they have different access patterns and different correct APIs:
 
-- **`WebExtra`** (`lib/helpers/WebExtra.js`) for **browser-driven** operations — anything that needs the open page, DOM, `evaluate`, init scripts, storage, network-response waits. **This is where every `JavascriptExecutor.executeScript(...)` body lands, as `page.evaluate(...)`.** Reaches `this.helpers['Playwright'].page` / `.browserContext`.
+- **`WebExtra`** (`lib/helpers/WebExtra.js`) for **browser-driven** operations — anything that needs the open page, DOM, JS execution, storage, network-response waits. **This is where every `JavascriptExecutor.executeScript(...)` body lands**, as `browser.execute(...)` (WebDriver) or `page.evaluate(...)` (Playwright, after the later swap). Reaches `this.helpers['WebDriver'].browser` — a WebdriverIO browser instance. See `node_modules/codeceptjs/docs/custom-helpers.md § WebDriver Example`.
 - **`ApiExtras`** (`lib/helpers/ApiExtras.js`) for **pure HTTP** operations — programmatic login, seed/teardown data, CRUD against an API. **This is where every RestAssured wrapper / Apache HttpClient call lands**, routed through the REST helper. Reaches `this.helpers['REST']` (or `GraphQL`). See `node_modules/codeceptjs/docs/api.md`.
 
 Register both helpers under `helpers` in `codecept.conf.{js,ts}`.
 
-**Never call `this.helpers['Playwright'].browserContext.request.*` for API work.** That bypasses the REST + `JSONResponse` stack — no step logging, no `I.seeResponseCodeIsSuccessful` assertions, no shared headers. If the API needs the same auth as the browser, share cookies once at the top of the config:
+**Never bypass the REST helper for API work** by reaching for the browser helper's underlying HTTP surface. That skips the REST + `JSONResponse` stack — no step logging, no `I.seeResponseCodeIsSuccessful` assertions, no shared headers. If the API needs the same auth as the browser, share cookies once at the top of the config:
 
 ```js
 import { setSharedCookies } from '@codeceptjs/configure'
@@ -117,7 +162,7 @@ setSharedCookies()
 
 …or set `defaultHeaders` on the REST helper for token-based auth, or use `I.amBearerAuthenticated(secret(token))` per test.
 
-**WebExtra example** — browser-driven (a `JavascriptExecutor` call from a `BrowserHelper.java` lands here):
+**WebExtra example** — browser-driven against the WebDriver helper (a `JavascriptExecutor` call from a `BrowserHelper.java` lands here as `browser.execute(...)`):
 
 ```js
 import Helper from '@codeceptjs/helper'
@@ -125,13 +170,14 @@ import fs from 'node:fs/promises'
 
 export default class WebExtra extends Helper {
   async scrollIntoView(selector) {
-    const { page } = this.helpers['Playwright']
-    await page.locator(selector).scrollIntoViewIfNeeded()
+    const { browser } = this.helpers['WebDriver']
+    const el = await browser.$(selector)
+    await el.scrollIntoView()
   }
 
   async setLocalStorage(key, value) {
-    const { page } = this.helpers['Playwright']
-    await page.evaluate(([k, v]) => localStorage.setItem(k, v), [key, value])
+    const { browser } = this.helpers['WebDriver']
+    await browser.execute((k, v) => localStorage.setItem(k, v), key, value)
   }
 
   async writeJsonFile(filePath, data) {
@@ -139,6 +185,8 @@ export default class WebExtra extends Helper {
   }
 }
 ```
+
+> When you later swap to the Playwright helper, only the body of each method changes — the `I.*` surface contributed by `WebExtra` stays the same. Replace `this.helpers['WebDriver'].browser` with `this.helpers['Playwright'].page` and translate `browser.execute(...)` to `page.evaluate(...)`. Tests don't change.
 
 **ApiExtras example** — pure HTTP (a RestAssured wrapper from `LoginHelper.java` lands here):
 
@@ -277,6 +325,14 @@ npx codeceptjs dry-run --steps -c <config>
 
 It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
 
+**Then run the whole batch for real.** Dry-run proves specs parse and resolve — not that they pass. As soon as a batch is dry-run clean, run it against the browser:
+
+```bash
+npx codeceptjs run --steps -c <config>
+```
+
+First real runs after a migration almost always have failures — locator drift, timing the explicit `WebDriverWait` code was masking, auth/session differences, data assumptions. **This is expected; fixing it is part of the migration, not a follow-up task.** When a test fails, **invoke the `debugging-codeceptjs-tests` skill and fix it on the fly** — it breakpoints the failing step, inspects the live page via MCP, finds the working locator/wait, and commits the verified fix. Do not bulk-rewrite specs blind, and do not mask failures with `retry`. Drive every failure to a real fix before starting the next batch. A batch is "done" when it runs green, not when it dry-runs clean.
+
 ### 6. Locators
 
 CodeceptJS priority — pick the highest that fits:
@@ -334,7 +390,7 @@ Java suites almost always have a `LoginHelper` / `AuthBase` that performs UI log
 
 - Programmatic login → method on `ApiExtras` (`loginViaApi`); the `auth` plugin's role definition calls it once and caches the resulting cookies / storage state.
 - UI login → method on `WebExtra` (`login`); the `auth` plugin's role calls it the same way.
-- Cookie reuse across tests → drop the manual logic; `auth` does it via Playwright's `storageState`.
+- Cookie reuse across tests → drop the manual logic; `auth` caches cookies + storage from the helper (Playwright `storageState`, WebDriver cookie jar — same plugin config either way).
 - Multi-user scenarios → `session(...)` from `codeceptjs/effects`.
 
 ### 9. Test data and fixtures
@@ -354,8 +410,10 @@ Java suites almost always have a `LoginHelper` / `AuthBase` that performs UI log
 |---|---|
 | RestAssured `given().when().then()` | REST helper: `await I.sendPostRequest(...)` + `I.seeResponseCodeIsSuccessful` / `I.seeResponseContainsKeys` / Zod schema |
 | Apache HttpClient wrappers | method on `ApiExtras` via REST helper |
-| WireMock client-side stubs | `I.mockRoute(url, route => route.fulfill({...}))` (Playwright) |
-| WireMock backend sidecar | **keep WireMock** running as a sidecar process; CodeceptJS does not replace backend service mocking |
+| WireMock client-side stubs | **on WebDriver: keep WireMock** (or any sidecar proxy) — WebDriver has no client-side network interception. After the later Playwright swap, port to `I.mockRoute(url, route => route.fulfill({...}))` |
+| WireMock backend sidecar | **keep WireMock** running as a sidecar process; CodeceptJS does not replace backend service mocking either way |
+
+> Client-side network mocking is the one capability the WebDriver helper does not match. If the Java suite relies heavily on WireMock client-side stubs and you want them inline as `I.mockRoute(...)`, that's a strong reason to schedule the Playwright swap right after WebDriver-green.
 
 ### 11. Cucumber-JVM (if present)
 
@@ -376,25 +434,39 @@ Only after every spec is ported and CI is green on the CodeceptJS run:
 
 ## Verify
 
-1. `npx codeceptjs check -c <config>` — config + helper + plugin sanity.
-2. `npx codeceptjs list -c <config>` — every ported Java helper method appears as an `I.*` action from `WebExtra` or `ApiExtras`; every page object's methods appear.
-3. `npx codeceptjs dry-run --steps -c <config>` — every Scenario loads.
-4. Smoke run: `npx codeceptjs run --debug --grep '@smoke'`.
-5. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
-6. `find src/test/java -name "*.java"` — empty before deleting the Java tree.
+1. Default path: nothing to check — WebdriverIO v9 starts the driver. Only if using the Docker fallback: container reachable, `curl -fsS http://127.0.0.1:4444/status` returns `ready: true`.
+2. `npx codeceptjs check -c <config>` — config + helper + plugin sanity.
+3. `npx codeceptjs list -c <config>` — every ported Java helper method appears as an `I.*` action from `WebExtra` or `ApiExtras`; every page object's methods appear.
+4. `npx codeceptjs dry-run --steps -c <config>` — every Scenario loads.
+5. Full run on WebDriver: `npx codeceptjs run --steps -c <config>`. Failures are expected on first runs — drive each to a fix via the **`debugging-codeceptjs-tests`** skill (not `retry`, not blind rewrites). The migration is complete only when the whole converted suite is green.
+6. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
+7. `find src/test/java -name "*.java"` — empty before deleting the Java tree.
+
+## Optional follow-up: swap to Playwright
+
+Once the migration is complete and WebDriver runs are stable in CI, consider swapping the helper for ongoing work:
+
+1. `npm i -D playwright`.
+2. Replace the `WebDriver` block under `helpers` with a `Playwright` block (see `node_modules/codeceptjs/docs/playwright.md`); drop `host` / `port` / `desiredCapabilities`.
+3. Translate each `WebExtra` method body from `this.helpers['WebDriver'].browser.execute(...)` to `this.helpers['Playwright'].page.evaluate(...)`. The `I.*` surface the helper contributes is unchanged.
+4. If you were using the Docker fallback, stop the container — Playwright manages browsers itself.
+5. Rerun `dry-run` and the smoke suite. Page objects, specs, fixtures, and the `auth` plugin config don't change.
+
+You gain: cross-browser coverage (Chromium / Firefox / WebKit) from one config, faster runs, native `I.mockRoute(...)` network mocking, richer ARIA snapshots via the MCP loop.
 
 ## Pointers
 
 - `node_modules/codeceptjs/docs/basics.md` — `I.*` vocabulary, locators, assertions, the `await` rule
-- `node_modules/codeceptjs/docs/playwright.md` — recommended helper; `mockRoute` for WireMock client-side stubs
-- `node_modules/codeceptjs/docs/webdriver.md` — alternative helper if a Selenium Grid must stay
+- `node_modules/codeceptjs/docs/webdriver.md` — default helper for this migration; § "Selenium in Docker (Selenoid)" for the container setup
+- `node_modules/codeceptjs/docs/playwright.md` — target for the optional follow-up swap; `mockRoute` for WireMock client-side stubs
 - `node_modules/codeceptjs/docs/locators.md` — semantic / ARIA / `locate()`, `customLocator` plugin
 - `node_modules/codeceptjs/docs/pageobjects.md` — for ported `@FindBy` POMs
-- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns
+- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns (see § "WebDriver Example" for the `browser` access pattern)
 - `node_modules/codeceptjs/docs/api.md` — REST helper for RestAssured ports
 - `node_modules/codeceptjs/docs/auth.md` — replace `LoginHelper` + cookie reuse
 - `node_modules/codeceptjs/docs/bdd.md` — CodeceptJS BDD for Cucumber-JVM ports
 - `node_modules/codeceptjs/docs/effects.md` — `session`, `tryTo`, `retryTo`, `within`
+- **`codeceptjs-fundamentals`** — Docker-fallback Selenium setup convention; run **after** migration to confirm wiring
 - **`writing-codeceptjs-tests`** — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
+- **`debugging-codeceptjs-tests`** — **use on every failing test from the first full run** (breakpoint, inspect live page via MCP, fix on the fly)
 - **`codeceptjs-auth`** — replace `LoginHelper` / cookie-based session reuse
-- **`codeceptjs-fundamentals`** — run **after** migration to confirm the new setup is wired correctly

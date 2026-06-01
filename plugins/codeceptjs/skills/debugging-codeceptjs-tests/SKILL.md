@@ -17,7 +17,19 @@ In-test `pause()` adapts to who's driving: at a TTY it opens the readline REPL; 
 ## Workflow
 
 ### 1. Read the project (fundamentals)
-Run the **codeceptjs-fundamentals** skill. You need: helper, plugins on (especially `aiTrace`, `screenshot`, `pageInfo`, `retryFailedStep`, `pause`, `auth`), env vars, whether MCP is wired up. If `aiTrace` is **not** enabled, suggest adding `plugins: { aiTrace: { enabled: true } }` before re-running — most of this skill leans on its output.
+Run the **codeceptjs-fundamentals** skill. You need: helper, plugins on (especially `aiTrace`, `screenshot`, `pageInfo`, `retryFailedStep`, `pause`, `auth`), env vars, whether MCP is wired up. If `aiTrace` is **not** declared, add it **once** with `plugins: { aiTrace: { enabled: true } }` — most of this skill leans on its output.
+
+**Declare `aiTrace` once; never edit config to change its trigger.** The capture mode is controlled per-run from the CLI, exactly like the `pause` plugin:
+
+```bash
+npx codeceptjs run -p aiTrace:on=step   # persist every step (default)
+npx codeceptjs run -p aiTrace:on=fail   # persist only the failed step
+npx codeceptjs run -p aiTrace:on=test   # persist only the last step of each test
+npx codeceptjs run -p aiTrace:on=file:path=tests/login_test.js;line=43
+npx codeceptjs run -p aiTrace:on=url:pattern=/checkout/*
+```
+
+`-p aiTrace:on=...` overrides the config-declared mode for that run only. Reach for `on=fail` to keep a CI repro lean, `on=step` while actively diagnosing. Don't flip `on:` in `codecept.conf.js` between runs — it churns the config and the change leaks into other runs.
 
 ### 2. Reproduce minimally
 Run only the failing test, with steps printed:
@@ -94,7 +106,11 @@ Edit the test, then `npx codeceptjs run --grep '<scenario>' --steps`. Use **code
 
 | You want to … | Use |
 |---|---|
-| Per-step artifacts after a run | `aiTrace` plugin (`output/trace_*/`) |
+| Per-step artifacts after a run | `aiTrace` plugin (`output/trace_*/`), declared once in config |
+| Capture every step's state | `npx codeceptjs run -p aiTrace:on=step` |
+| Capture only the failed step (lean CI repro) | `npx codeceptjs run -p aiTrace:on=fail` |
+| Capture last step per test | `npx codeceptjs run -p aiTrace:on=test` |
+| Capture steps from a file/line or URL | `-p aiTrace:on=file:path=<file>;line=<N>` / `-p aiTrace:on=url:pattern=<glob>` |
 | REPL on first failure | `npx codeceptjs run -p pause` (default `on=fail`) |
 | Single-step interactively | `npx codeceptjs run -p pause:on=step` |
 | Break on a file or URL | `pause:on=file:path=<file>;line=<N>` / `pause:on=url:pattern=<glob>` |
@@ -204,6 +220,7 @@ If the trace shows a redirect to `/login` mid-test, or 401/403 in console, fix *
 - Committing `pause()` calls. They're a debugging tool — remove (or replace with `pauseAt`) before merging. A `pause()` left in a test that runs in a non-TTY non-MCP CI subprocess will print a notice and skip, but it's still noise on every run.
 - Adding `waitFor*` blindly instead of identifying the real gating element from HTML/ARIA.
 - Leaving `I.wait(N)` (raw seconds) in committed tests — keep them only while debugging, then replace with the specific `waitFor*`.
+- Editing `aiTrace`'s `on:` in `codecept.conf.js` to switch capture modes — declare it once and override per-run with `-p aiTrace:on=...`. Repeated config edits churn the repo and leak the mode into unrelated runs.
 - Skipping the config check — `setHeadlessWhen(CI)` or env-driven URLs explain many "works locally fails in CI" reports.
 - Hiding the failure with `retries` instead of fixing the cause.
 

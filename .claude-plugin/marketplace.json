@@ -10,7 +10,7 @@
     {
       "name": "codeceptjs",
       "source": "./plugins/codeceptjs",
-      "description": "Eight skills covering everything an AI agent needs to write, debug, refactor, and fix CodeceptJS 4 tests — including a primer (codeceptjs-fundamentals), live page exploration (codeceptjs-exploration), trace analysis (codeceptjs-run-analysis), the auth plugin recipe (codeceptjs-auth), and four action skills (writing, debugging, refactoring, ci-fix)."
+      "description": "Thirteen skills covering everything an AI agent needs to write, debug, refactor, migrate, and fix CodeceptJS 4 tests — a primer (codeceptjs-fundamentals), live page exploration (codeceptjs-exploration), trace analysis (codeceptjs-run-analysis), the auth plugin recipe (codeceptjs-auth), four action skills (writing, debugging, refactoring, ci-fix), and five migration skills (migrate-codeceptjs-4 for the 3.x→4.x upgrade, plus migrate-cypress / migrate-protractor / migrate-testcafe / migrate-selenium-java-to-codeceptjs)."
     }
   ]
 }

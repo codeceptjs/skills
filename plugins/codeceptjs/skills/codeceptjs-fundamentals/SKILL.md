@@ -14,7 +14,7 @@ Two jobs: teach the concepts you need to read CodeceptJS code without making thi
 ### Module system
 CodeceptJS 4 is **ESM and TypeScript only**. Tests, configs, page objects, and helpers use `import`/`export`; `package.json` **must** have `"type": "module"` — if it isn't there yet, add it before doing anything else (without it, every `.js` file is parsed as CommonJS and imports fail). **TypeScript** is first-class: name the config `codecept.conf.ts`, add a loader entry like `require: ['tsx/cjs']` (or `ts-node/register`), and write tests as `.ts` files.
 
-If the project is on **CodeceptJS 3.x or still uses CommonJS** (`require()` / `module.exports`, no `"type": "module"`, removed helpers/plugins like `autoLogin` or `Nightmare`), stop here and run the **`codeceptjs-3-to-4-migration`** skill — it walks the full upgrade path (Node bump, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals`, dependency bumps, verify). Don't try to half-fix individual files; the migration is a whole-project change.
+If the project is on **CodeceptJS 3.x or still uses CommonJS** (`require()` / `module.exports`, no `"type": "module"`, removed helpers/plugins like `autoLogin` or `Nightmare`), stop here and run the **`migrate-codeceptjs-4`** skill — it walks the full upgrade path (Node bump, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals`, dependency bumps, verify). Don't try to half-fix individual files; the migration is a whole-project change.
 
 ### Configuration
 `codecept.conf.{js,ts,mjs,cjs}` at the repo root. Top-level keys: `helpers`, `plugins`, `include`, `ai`, `bootstrap`/`teardown`, `tests`, `output`, `timeout`. TypeScript configs declare a loader in `require: [...]` (`tsx/cjs`, `ts-node/register`, `ts-node/esm`). Multiple env-specific files (`codecept.ci.conf.js`, …) are selected via `--config <file>`. The `@codeceptjs/configure` package mutates the resolved config at load time (`setHeadlessWhen`, `setBrowser`, `setCommonPlugins`, `setWindowSize`) — static fields can lie until you grep for that import.
@@ -144,7 +144,7 @@ For Gherkin step definitions specifically, `npx codeceptjs gherkin:steps -c <con
 
 ## Report
 
-Short prose summary covering the items above. Flag env-driven values explicitly — don't claim a fixed value when it's `process.env.BROWSER || 'chromium'`. Flag conflicts (static `show: true` overridden by `setHeadlessWhen(CI)`; `auth` configured but the credential env vars are missing from the current shell or `.env.example`). If no config exists at the repo root and no `--config` is referenced anywhere, recommend `npx codeceptjs init .` and stop. **If the project is on CodeceptJS 3.x or CommonJS, recommend the `codeceptjs-3-to-4-migration` skill and stop** — discovery output for a pre-4 project will misrepresent the available APIs.
+Short prose summary covering the items above. Flag env-driven values explicitly — don't claim a fixed value when it's `process.env.BROWSER || 'chromium'`. Flag conflicts (static `show: true` overridden by `setHeadlessWhen(CI)`; `auth` configured but the credential env vars are missing from the current shell or `.env.example`). If no config exists at the repo root and no `--config` is referenced anywhere, recommend `npx codeceptjs init .` and stop. **If the project is on CodeceptJS 3.x or CommonJS, recommend the `migrate-codeceptjs-4` skill and stop** — discovery output for a pre-4 project will misrepresent the available APIs.
 
 ## Pointers
 

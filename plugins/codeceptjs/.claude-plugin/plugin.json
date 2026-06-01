@@ -1,6 +1,6 @@
 {
   "name": "codeceptjs",
-  "description": "Skills for working with CodeceptJS 4 — orientation, authoring, debugging, refactoring, and CI auto-repair.",
+  "description": "Skills for working with CodeceptJS 4 — orientation, authoring, debugging, refactoring, CI auto-repair, and migration (3.x→4.x upgrade and Cypress / Protractor / TestCafe / Selenium-Java ports).",
   "version": "0.1.0",
   "author": {
     "name": "CodeceptJS"

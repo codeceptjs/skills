@@ -223,6 +223,14 @@ npx codeceptjs dry-run --steps -c <config>
 
 It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
 
+**Then run the whole batch for real.** Dry-run proves specs parse and resolve — not that they pass. As soon as a batch is dry-run clean, run it against the browser:
+
+```bash
+npx codeceptjs run --steps -c <config>
+```
+
+First real runs after a migration almost always have failures — locator drift, timing the source framework hid behind its own retry, auth/session differences, data assumptions. **This is expected; fixing it is part of the migration, not a follow-up task.** When a test fails, **invoke the `debugging-codeceptjs-tests` skill and fix it on the fly** — it breakpoints the failing step, inspects the live page via MCP, finds the working locator/wait, and commits the verified fix. Do not bulk-rewrite specs blind, and do not mask failures with `retry`. Drive every failure to a real fix before starting the next batch. A batch is "done" when it runs green, not when it dry-runs clean.
+
 ### 6. Locator preference
 
 CodeceptJS priority — pick the highest that fits:
@@ -322,7 +330,7 @@ Only after every spec is ported and CI is green: delete `e2e/` (or whichever dir
 1. `npx codeceptjs check -c <config>` — config + helper + plugin sanity.
 2. `npx codeceptjs list -c <config>` — every ported helper method appears as an `I.*` action from `WebExtra` or `ApiExtras`; every page object's methods appear.
 3. `npx codeceptjs dry-run --steps -c <config>` — every Scenario loads.
-4. Smoke run: `npx codeceptjs run --debug --grep '@smoke'`.
+4. Full run: `npx codeceptjs run --steps -c <config>`. Failures are expected on first runs — drive each to a fix via the **`debugging-codeceptjs-tests`** skill (not `retry`, not blind rewrites). The migration is complete only when the whole converted suite is green.
 5. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
 6. `grep -rE "\\bbrowser\\.|\\bby\\.|\\.then\\(|waitForAngular" e2e/` — empty before deleting `e2e/`.
 
@@ -339,5 +347,6 @@ Only after every spec is ported and CI is green: delete `e2e/` (or whichever dir
 - `node_modules/codeceptjs/docs/sessions.md`, `auth.md` — multi-user + login reuse
 - `node_modules/codeceptjs/docs/effects.md` — `tryTo`, `retryTo`, `within`
 - `writing-codeceptjs-tests` — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
+- `debugging-codeceptjs-tests` — **use on every failing test from the first full run** (breakpoint, inspect live page via MCP, fix on the fly)
 - `codeceptjs-auth` — replace UI re-login in every `beforeEach`
 - `codeceptjs-fundamentals` — run **after** migration to confirm the new setup is wired correctly
