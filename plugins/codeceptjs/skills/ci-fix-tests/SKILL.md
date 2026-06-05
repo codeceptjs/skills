@@ -1,6 +1,6 @@
 ---
 name: ci-fix-tests
-description: Use on CI in non-interactive mode when a CodeceptJS run failed — automatically attempt safe fixes (locator drift, missing waits), rerun only the failing scenarios, compare against the baseline, roll back any edit that didn't help, and always write a markdown report at `output/ci-fix.md` for the CI step to consume. Conservative by design: no refactors, no config edits, no auth fixes, no flake-masking retries. Trigger on "ci fix tests", "auto-fix failing tests", "attempt repair on CI", or as a CI step after a failed run.
+description: "Use on CI in non-interactive mode when a CodeceptJS run failed — automatically attempt safe fixes (locator drift, missing waits), rerun only the failing scenarios, compare against the baseline, roll back any edit that didn't help, and always write a markdown report at `output/ci-fix.md` for the CI step to consume. Conservative by design: no refactors, no config edits, no auth fixes, no flake-masking retries. Trigger on \"ci fix tests\", \"auto-fix failing tests\", \"attempt repair on CI\", or as a CI step after a failed run."
 ---
 
 # Auto-fix CodeceptJS Tests on CI
