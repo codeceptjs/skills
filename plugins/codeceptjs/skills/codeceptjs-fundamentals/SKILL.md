@@ -1,6 +1,6 @@
 ---
 name: codeceptjs-fundamentals
-description: Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, and the `await` rule. Then runs a four-step discovery against this project: `codeceptjs check` to verify the setup loads, read the config, run `codeceptjs list` to enumerate available `I.*` actions, run `codeceptjs dry-run` to enumerate existing tests — and reports which helper, plugins, env switching, page objects, custom actions, and test suites are actually active. Other CodeceptJS skills depend on this output.
+description: "Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, and the `await` rule. Then runs a four-step discovery against this project: `codeceptjs check` to verify the setup loads, read the config, run `codeceptjs list` to enumerate available `I.*` actions, run `codeceptjs dry-run` to enumerate existing tests — and reports which helper, plugins, env switching, page objects, custom actions, and test suites are actually active. Other CodeceptJS skills depend on this output."
 ---
 
 # CodeceptJS Fundamentals
