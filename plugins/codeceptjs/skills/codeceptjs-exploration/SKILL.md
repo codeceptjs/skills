@@ -1,50 +1,57 @@
 ---
 name: codeceptjs-exploration
-description: Use to explore a page in CodeceptJS — read its ARIA tree, inspect candidate elements, pick a stable locator. Drives the live browser through MCP `run_code`, prefers ARIA over HTML, uses `I.grabWebElement` / `I.grabWebElements` with permissive XPaths to enumerate candidates and `toSimplifiedHTML` / `toAbsoluteXPath` to disambiguate. Other skills (`writing-codeceptjs-tests`, `debugging-codeceptjs-tests`, `refactoring-codeceptjs-tests`) invoke this whenever they need to learn what's on a page.
+description: >
+  Use to explore a page in CodeceptJS — read its ARIA tree, inspect candidate
+  elements, pick a stable locator. Drives the live browser through MCP
+  `run_code`, prefers ARIA over HTML, uses `I.grabWebElement` /
+  `I.grabWebElements` with permissive XPaths to enumerate candidates and
+  `toSimplifiedHTML` / `toAbsoluteXPath` to disambiguate. Other skills
+  (writing-codeceptjs-tests, debugging-codeceptjs-tests,
+  refactoring-codeceptjs-tests) invoke this whenever they need to learn what's
+  on a page.
 ---
 
 # CodeceptJS Page Exploration
 
-Authoring a test, debugging a failure, and refactoring a stale locator all share one task: open a page, find the right element, pick a stable locator. This skill is the playbook.
+Authoring a test, debugging a failure, and refactoring a stale locator share one task: open a page, find the right element, pick a stable locator. This is that playbook.
 
-## How to look at a page
+## Tools
 
-Drive everything through MCP. Two tools matter for exploration:
+- **`run_code`** — runs CodeceptJS code, returns produced values, captures `console.*`, saves a final-state snapshot. For *do something and look at the result*.
+- **`snapshot`** — captures state without acting (URL, cookies, localStorage, HTML, ARIA, screenshot, console). For "what's on the page right now".
 
-- **`run_code`** — runs CodeceptJS code and returns the value the code produced, captures `console.*` output, and saves a final-state snapshot. Use when you want to *do something and look at the result* (try a locator, grab a value, navigate).
-- **`snapshot`** — captures the current state without performing any action: URL, cookies, localStorage, HTML, ARIA, screenshot, console. Use when you want to look at "what's on the page right now" between two actions, without re-running anything.
+Artifact sources, in preference order:
 
-Three artifact sources, in order of preference:
+1. **ARIA snapshot** — structured, no styling noise, easy duplicate/accessibility-name scanning
+2. **Screenshot** — visual confirmation; catches layout breaks ARIA can't show
+3. **HTML** — only when ARIA lacks context (custom widgets without accessible names, attribute-driven behaviour)
 
-1. **ARIA snapshot first.** Structured, free of styling noise, easy to scan for duplicates and accessibility names.
-2. **Screenshot.** Visual confirmation — catches layout breaks, missing icons, "rendered but wrong" cases that ARIA can't show.
-3. **HTML / outer markup.** Pull only when ARIA is missing crucial context: custom widgets without accessible names, attribute-driven behaviour, dynamic content with no roles.
+## Inspect an element
 
-## Inspect a known element
+`I.grabWebElement(locator)` → one WebElement; `I.grabWebElements(locator)` → array. Same cross-helper API on Playwright / Puppeteer / WebDriver.
 
-`I.grabWebElement(locator)` returns one WebElement; `I.grabWebElements(locator)` returns an array. Same cross-helper API on Playwright / Puppeteer / WebDriver, returns values back through MCP `run_code`.
-
-| You want to … | Method on WebElement |
+| You want to … | Method |
 |---|---|
 | Confirm rendered / visible / enabled | `exists()`, `isVisible()`, `isEnabled()` |
 | Read text / value / attribute / property | `getText()`, `getValue()`, `getAttribute(n)`, `getProperty(n)` |
-| Where is it on the page | `getBoundingBox()` — flags offscreen / zero-sized |
-| The actual rendered markup | `toOuterHTML()`, `toSimplifiedHTML(300)` (truncated, MCP-friendly) |
+| Position on page | `getBoundingBox()` — flags offscreen / zero-sized |
+| Rendered markup | `toOuterHTML()`, `toSimplifiedHTML(300)` (truncated, MCP-friendly) |
 | Stable selector for a fix | `toAbsoluteXPath()` |
-| Look inside an iframe | `inIframe(async (body) => { ... })` |
+| Inside an iframe | `inIframe(async (body) => { ... })` |
 | Drill into children | `$(loc)`, `$$(loc)` |
-| Run a browser-side function | `evaluate(fn, ...args)` |
+| Browser-side function | `evaluate(fn, ...args)` |
 
 ## Discover candidates when the obvious locator misses
 
-When `Edit` matches nothing, the control might say "Change", carry `aria-label="Edit user"`, or live in a `.btn-edit` class. Cast a wide net: pass a permissive XPath to `I.grabWebElements`, then disambiguate.
+When `Edit` matches nothing, the control may say "Change", carry `aria-label="Edit user"`, or live in `.btn-edit`. Cast a wide net with a permissive XPath via `I.grabWebElements`, then disambiguate.
 
-Build the XPath by ORing:
-- visible text — `text()` (or `.` to match descendants too)
-- relevant attributes — `@class`, `@aria-label`, `@title`, `@data-action`, `@id`
-- **synonyms** — "edit" / "change" / "modify"; "delete" / "remove" / "trash"; "submit" / "send" / "save"
+OR together in the XPath:
 
-Wrap each match with `translate(...)` for case-insensitive `contains`:
+- visible text — `text()` (or `.` for descendants)
+- attributes — `@class`, `@aria-label`, `@title`, `@data-action`, `@id`
+- **synonyms** — edit/change/modify; delete/remove/trash; submit/send/save
+
+Case-insensitive via `translate(...)`:
 
 ```
 //*[contains(translate(., 'EDIT', 'edit'), 'edit')
@@ -53,39 +60,44 @@ Wrap each match with `translate(...)` for case-insensitive `contains`:
     or contains(translate(., 'CHANGE', 'change'), 'change')]
 ```
 
-Then iterate `toSimplifiedHTML(150)` over the result, review the candidates, pick the right one, and commit a stable locator built from its discriminating attribute or text — or `toAbsoluteXPath()` if nothing else is stable.
+Then iterate `toSimplifiedHTML(150)` over the results, pick the right candidate, commit a stable locator from its discriminating attribute or text.
 
 ## Pick a stable locator
 
-Once the right element is identified, choose the locator with the highest semantic value that is still unique:
+Two decisions in order: **which region scopes the lookup** (context), **what identifies the element inside it**. Region first keeps the identifier short and semantic — the discriminator found during disambiguation belongs in the context argument:
 
-1. ARIA — `{ role: 'button', name: 'Edit user' }`. Survives CSS refactors.
-2. Visible label / semantic text — `'Edit user'`. Easy to read.
-3. `[data-testid="edit-user"]` if the team uses test attributes.
-4. Composed CSS with a stable parent — `#user-row-42 button.edit`.
-5. `toAbsoluteXPath()` from the candidate review — last resort; flag for the team to add a `data-testid`.
+```js
+I.click('Edit user', '.user-row')      // ✅ region + what the user sees
+I.click('#user-row-42 button.edit')    // ❌ same element, brittle, unreadable
+```
 
-Don't commit a locator you didn't verify. After picking, run `I.seeElement(<locator>)` (or `grabWebElement(<locator>)`) through MCP `run_code` to confirm it matches exactly one element.
+Stable regions: landmarks (`nav`, `main`, `{ role: 'dialog' }`), app-shell containers (`.sidebar`, `.toolbar`, `.modal`), rows/cards identified by data via `locate(...)`. Identifier priority (full rationale: `codeceptjs-fundamentals` § Locators):
+
+1. Visible label / accessible name — plain string already matches `aria-label`; don't expand to `{ css: '[aria-label="..."]' }`
+2. ARIA role when ambiguous within context or role is part of the check
+3. `$name` via `customLocator` when team test attributes exist
+4. Composed CSS, still scoped: `I.click('button.edit', '#user-row-42')`
+5. `toAbsoluteXPath()` — last resort; flag the team to add a `data-testid`
+
+**Never commit an unverified locator** — confirm via `run_code` (`I.seeElement(loc, context)` or `grabWebElement(loc)`) that it matches exactly one element.
 
 ## Common patterns
 
-- **Strict mode found 2 matches** — `grabWebElements('Save')`, `toSimplifiedHTML(200)` each, find a discriminator (parent class, `data-*`, surrounding text).
-- **Button rendered but doesn't act** — `grabWebElement('Submit')`, then `isEnabled()` + `getBoundingBox()` — disabled? offscreen? zero-sized?
-- **Wrong row in a list** — `grabWebElements('.user-row')`, `getText()` per row, identify, then `getAttribute('data-id')` for a stable hook.
-- **Inside an iframe** — `(await I.grabWebElement('iframe.editor')).inIframe(async (body) => body.$('button'))`.
-- **No semantic name on the element** — `toAbsoluteXPath()` for now; flag the team to add a `data-testid`.
+- Strict mode 2+ matches → `grabWebElements('Save')` + `toSimplifiedHTML(200)` each, find discriminator, pass as context: `I.click('Save', '.modal')`
+- Button rendered but doesn't act → `grabWebElement('Submit')` + `isEnabled()` + `getBoundingBox()` — disabled? offscreen? zero-sized?
+- Wrong row in a list → `grabWebElements('.user-row')`, `getText()` per row to identify, `getAttribute('data-id')` for stable hook
+- Inside iframe → `(await I.grabWebElement('iframe.editor')).inIframe(async (body) => body.$('button'))`
 
 ## Things to avoid
 
-- Choosing a locator without seeing the candidates first — you'll guess wrong and the test will be flaky.
-- Committing `toAbsoluteXPath()` when a semantic locator is right there.
-- Ignoring the screenshot — "element exists in HTML" doesn't mean "user can see it".
-- Reaching for `usePlaywrightTo` / `useWebDriverTo` when WebElement methods cover the case (cross-helper code is preferred).
+- Choosing a locator without seeing candidates first.
+- Committing `toAbsoluteXPath()` when a semantic locator is available.
+- Committing unscoped locators where a context keeps them short.
+- Ignoring the screenshot — "exists in HTML" ≠ "user can see it".
+- `usePlaywrightTo` / `useWebDriverTo` when WebElement methods cover it.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/web-element.md` — full WebElement API
-- `node_modules/codeceptjs/docs/locators.md` — locator strategies and priorities
-- `node_modules/codeceptjs/docs/element-selection.md` — `step.opts({ elementIndex })`, strict mode
-- `node_modules/codeceptjs/docs/mcp.md` — MCP tool list
-- `codeceptjs-fundamentals` skill — locator priority and the `await` rule
+- `codeceptjs-fundamentals` — locator priority, await rule
+- `writing-codeceptjs-tests` — invokes this during Mode B exploration
+- `debugging-codeceptjs-tests` — invokes this for live inspection; offline variant via `codeceptq`

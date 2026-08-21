@@ -103,8 +103,8 @@ Run, in order:
 5. Grep the repo for `tryTo(`, `retryTo(`, `eachElement(`, `commentStep(`, `softExpect`, `I.softExpect`, `Joi.`, `restart: 'browser'`, `I.retry(`, `I.limitTime(`, and (unless the user chose to keep it) `Mochawesome` / `--reporter mochawesome` — none should remain. `step.retry(` / `step.timeout(` passed as a step argument is the expected replacement, not a leftover.
 6. If the project used `autoLogin`: confirm the `auth` plugin restores sessions and roles.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/migration-4.md` — full reference (this skill is a workflow over it)
 - `codeceptjs-auth` — replacement for the removed `autoLogin` plugin
-- `codeceptjs-fundamentals` — run **after** migration to confirm the new setup is wired correctly
+- `codeceptjs-fundamentals` — run **after** migration to confirm wiring
+- Full reference: `node_modules/codeceptjs/docs/migration-4.md`

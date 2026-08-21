@@ -13,7 +13,7 @@ Three foundational differences to internalize:
 2. **Helpers, not `WebDriver` / `driver`.** `I.*` dispatches to a configured helper. **Default to the WebDriver helper** — it speaks the same W3C WebDriver protocol your Java suite already speaks, so the migration is most native: same Selenium server, same browser drivers, same capabilities, same Grid if you have one. Once the suite is green on WebDriver, you can swap in the **Playwright** helper (modern, faster, less flaky, native multi-browser via one config) by changing one helper block — the test code is identical either way.
 3. **First-class abstractions.** Page objects, the `auth` plugin, multi-user `session(...)`, custom helpers, and the `customLocator` plugin are built in. Java suites already centralise these (`PageFactory`, `LoginHelper`, `DriverManager`); the migration consolidates them onto the framework's idioms instead of carrying the Java-specific glue forward.
 
-Authoritative references: `node_modules/codeceptjs/docs/basics.md`, `locators.md`, `playwright.md`, `webdriver.md`, `custom-helpers.md`, `pageobjects.md`.
+Authoritative reference: `node_modules/codeceptjs/docs/` (basics, locators, playwright, webdriver, custom-helpers, pageobjects).
 
 ## When to trigger
 
@@ -317,30 +317,26 @@ for (const sort of testSort) {
 }
 ```
 
-**Dry-run as you go.** After each batch of converted specs, run:
+**Per batch**: `npx codeceptjs dry-run --steps -c <config>` — loads every Scenario, resolves every `I.*` call, no browser. Surfaces typos, missing imports, page objects not under `include`, and nonexistent verbs in seconds. Fix before anything real.
 
-```bash
-npx codeceptjs dry-run --steps -c <config>
-```
+Then run the batch: `npx codeceptjs run --steps -c <config>`.
 
-It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
-
-**Then run the whole batch for real.** Dry-run proves specs parse and resolve — not that they pass. As soon as a batch is dry-run clean, run it against the browser:
-
-```bash
-npx codeceptjs run --steps -c <config>
-```
-
-First real runs after a migration almost always have failures — locator drift, timing the explicit `WebDriverWait` code was masking, auth/session differences, data assumptions. **This is expected; fixing it is part of the migration, not a follow-up task.** When a test fails, **invoke the `debugging-codeceptjs-tests` skill and fix it on the fly** — it breakpoints the failing step, inspects the live page via MCP, finds the working locator/wait, and commits the verified fix. Do not bulk-rewrite specs blind, and do not mask failures with `retry`. Drive every failure to a real fix before starting the next batch. A batch is "done" when it runs green, not when it dry-runs clean.
+- First real runs almost always fail — locator drift, timing the explicit `WebDriverWait` code was masking, auth/session differences, data assumptions. **Expected; fixing it is part of the migration.**
+- Every failure → invoke `debugging-codeceptjs-tests` and fix on the fly (breakpoint, live-page inspection, verified fix). No blind rewrites, no `retry` masking.
+- A batch is done when it runs green, not when it dry-runs clean.
 
 ### 6. Locators
 
-CodeceptJS priority — pick the highest that fits:
+**Scope every locator with a context.** The last argument of every action narrows the lookup to a region — `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`, `I.click({ role: 'button', name: 'Delete' }, '.modal')`. A short semantic or ARIA locator plus a context beats one long unscoped locator: it reads like the page, disambiguates duplicate labels without growing, and survives markup churn. Apply this to every row of the tables below — the source framework's chain usually splits cleanly into *region* + *what the user sees*.
 
-1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save')`, `I.fillField('Email', 'u@t.com')`.
-2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' })`.
-3. **`locate()` builder** — `I.click(locate('button').withText('Edit').inside('tr').withText('Acme'))`.
-4. **CSS / XPath** — fallback only.
+CodeceptJS priority — pick the highest that fits, then add the context:
+
+1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`.
+A plain string already matches `aria-label`, so an icon-only control with `aria-label="Save"` is `I.click('Save', <context>)` — never `'aria-label=Save'` or `{ css: '[aria-label="Save"]' }`.
+2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' }, '#login-form')`.
+3. **`$name` via the `customLocator` plugin** — when the suite leans on `data-test` / `data-qa` attributes.
+4. **`locate()` builder** — `I.click(locate('button').withText('Edit').inside('tr').withText('Acme'))`; often better split as `I.click('Edit', locate('tr').withText('Acme'))`.
+5. **CSS / XPath** — fallback only.
 
 Java suites lean on `By.id`, `By.cssSelector`, `By.xpath`, `By.linkText`, and `@FindBy(...)` heavily. Translation:
 
@@ -454,19 +450,10 @@ Once the migration is complete and WebDriver runs are stable in CI, consider swa
 
 You gain: cross-browser coverage (Chromium / Firefox / WebKit) from one config, faster runs, native `I.mockRoute(...)` network mocking, richer ARIA snapshots via the MCP loop.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/basics.md` — `I.*` vocabulary, locators, assertions, the `await` rule
-- `node_modules/codeceptjs/docs/webdriver.md` — default helper for this migration; § "Selenium in Docker (Selenoid)" for the container setup
-- `node_modules/codeceptjs/docs/playwright.md` — target for the optional follow-up swap; `mockRoute` for WireMock client-side stubs
-- `node_modules/codeceptjs/docs/locators.md` — semantic / ARIA / `locate()`, `customLocator` plugin
-- `node_modules/codeceptjs/docs/pageobjects.md` — for ported `@FindBy` POMs
-- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns (see § "WebDriver Example" for the `browser` access pattern)
-- `node_modules/codeceptjs/docs/api.md` — REST helper for RestAssured ports
-- `node_modules/codeceptjs/docs/auth.md` — replace `LoginHelper` + cookie reuse
-- `node_modules/codeceptjs/docs/bdd.md` — CodeceptJS BDD for Cucumber-JVM ports
-- `node_modules/codeceptjs/docs/effects.md` — `session`, `tryTo`, `retryTo`, `within`
-- **`codeceptjs-fundamentals`** — Docker-fallback Selenium setup convention; run **after** migration to confirm wiring
-- **`writing-codeceptjs-tests`** — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
-- **`debugging-codeceptjs-tests`** — **use on every failing test from the first full run** (breakpoint, inspect live page via MCP, fix on the fly)
-- **`codeceptjs-auth`** — replace `LoginHelper` / cookie-based session reuse
+- `writing-codeceptjs-tests` — per-spec rewrite playbook (MCP-driven, verified steps)
+- `debugging-codeceptjs-tests` — use on every failing test from the first full run
+- `codeceptjs-auth` — replaces `LoginHelper` / cookie-based session reuse
+- `codeceptjs-fundamentals` — Docker-fallback Selenium convention; run after migration to confirm wiring
+- Reference docs: `node_modules/codeceptjs/docs/` (basics, webdriver, playwright, locators, custom-helpers, api, auth, bdd, effects)

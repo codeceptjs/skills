@@ -11,7 +11,7 @@ TestCafe and CodeceptJS share a lot at the surface — both expose a single test
 2. **Helpers, not a bundled proxy.** TestCafe runs as an HTTP/HTTPS proxy that injects automation into pages; CodeceptJS dispatches `I.*` to a configured helper. **Playwright recommended** — closest feel, fastest, supports all three engines (Chromium / Firefox / WebKit) the same way TestCafe did.
 3. **First-class abstractions.** Page objects, multi-user `session(...)`, the `auth` plugin, custom helpers, and the `customLocator` plugin are built in. TestCafe projects accumulate ad-hoc versions of these (Selector-property classes, `Role` factories, `ClientFunction` factories) — the migration consolidates them onto framework idioms.
 
-Authoritative references: `node_modules/codeceptjs/docs/basics.md`, `locators.md`, `playwright.md`, `custom-helpers.md`, `pageobjects.md`.
+Authoritative reference: `node_modules/codeceptjs/docs/` (basics, locators, playwright, custom-helpers, pageobjects).
 
 ## When to trigger
 
@@ -215,30 +215,26 @@ for (const row of await I.grabWebElements('.row')) {
 }
 ```
 
-**Dry-run as you go.** After each batch of converted specs, run:
+**Per batch**: `npx codeceptjs dry-run --steps -c <config>` — loads every Scenario, resolves every `I.*` call, no browser. Surfaces typos, missing imports, page objects not under `include`, and nonexistent verbs in seconds. Fix before anything real.
 
-```bash
-npx codeceptjs dry-run --steps -c <config>
-```
+Then run the batch: `npx codeceptjs run --steps -c <config>`.
 
-It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
-
-**Then run the whole batch for real.** Dry-run proves specs parse and resolve — not that they pass. As soon as a batch is dry-run clean, run it against the browser:
-
-```bash
-npx codeceptjs run --steps -c <config>
-```
-
-First real runs after a migration almost always have failures — locator drift, timing the source framework hid behind its own retry, auth/session differences, data assumptions. **This is expected; fixing it is part of the migration, not a follow-up task.** When a test fails, **invoke the `debugging-codeceptjs-tests` skill and fix it on the fly** — it breakpoints the failing step, inspects the live page via MCP, finds the working locator/wait, and commits the verified fix. Do not bulk-rewrite specs blind, and do not mask failures with `retry`. Drive every failure to a real fix before starting the next batch. A batch is "done" when it runs green, not when it dry-runs clean.
+- First real runs almost always fail — locator drift, timing the source framework hid behind its own retry, auth/session differences, data assumptions. **Expected; fixing it is part of the migration.**
+- Every failure → invoke `debugging-codeceptjs-tests` and fix on the fly (breakpoint, live-page inspection, verified fix). No blind rewrites, no `retry` masking.
+- A batch is done when it runs green, not when it dry-runs clean.
 
 ### 6. Locator preference
 
-CodeceptJS priority — pick the highest that fits. TestCafe's lazy chainable `Selector` lines up well with CodeceptJS's `locate()` builder, but most chains shrink considerably because semantic strings cover what `.withText` was doing.
+**Scope every locator with a context.** The last argument of every action narrows the lookup to a region — `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`, `I.click({ role: 'button', name: 'Delete' }, '.modal')`. A short semantic or ARIA locator plus a context beats one long unscoped locator: it reads like the page, disambiguates duplicate labels without growing, and survives markup churn. Apply this to every row of the tables below — the source framework's chain usually splits cleanly into *region* + *what the user sees*.
 
-1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save')`, `I.fillField('Email', 'u@t.com')`. Covers `Selector('button').withText('Save')` cleanly.
-2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' })`. Strong default for modern apps.
-3. **`locate()` builder** — `I.click(locate('.row').withText('Acme').inside('table'))`. Direct equivalent of TestCafe `Selector('.row').withText('Acme').find('.btn')` style chains.
-4. **CSS / XPath / attribute objects** — `{ id: 'foo' }`, `{ name: 'email' }`, `{ css: '[data-test=submit]' }`, `{ xpath: '//div[@id="x"]' }`. Fallback.
+CodeceptJS priority — pick the highest that fits, then add the context. TestCafe's lazy chainable `Selector` lines up well with CodeceptJS's `locate()` builder, but most chains shrink considerably because a semantic string plus a context covers what `.withText` + `.find` were doing — `Selector('.row').withText('Acme').find('.btn')` becomes `I.click('Edit', locate('.row').withText('Acme'))`.
+
+1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`. Covers `Selector('button').withText('Save')` cleanly.
+A plain string already matches `aria-label`, so an icon-only control with `aria-label="Save"` is `I.click('Save', <context>)` — never `'aria-label=Save'` or `{ css: '[aria-label="Save"]' }`.
+2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' }, '#login-form')`. Strong default for modern apps.
+3. **`$name` via the `customLocator` plugin** — when the suite uses `data-test` / `data-qa` attributes.
+4. **`locate()` builder** — `I.click(locate('.row').withText('Acme').inside('table'))`. Direct equivalent of TestCafe `Selector(...)` chains that don't reduce to locator + context.
+5. **CSS / XPath / attribute objects** — `{ id: 'foo' }`, `{ name: 'email' }`, `{ css: '[data-test=submit]' }`, `{ xpath: '//div[@id="x"]' }`. Fallback.
 
 | TestCafe Selector chain | CodeceptJS 4 |
 |---|---|
@@ -333,18 +329,10 @@ Only after every spec is ported and CI is green: delete `.testcaferc.{json,js,ts
 5. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
 6. `grep -rE "\\bfixture\\(|\\btest\\(|Selector\\(|ClientFunction\\(|\\bRole\\(|t\\.click\\(|t\\.typeText\\(" tests/` — empty before deleting the original TestCafe directory.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/basics.md` — `I.*` vocabulary, locators, assertions, the `await` rule (the rule TestCafe users have to *un*-learn)
-- `node_modules/codeceptjs/docs/playwright.md` — recommended helper; `mockRoute` for `RequestMock`; `evaluate` for `ClientFunction` / `t.eval` ports
-- `node_modules/codeceptjs/docs/locators.md` — semantic / ARIA / `locate()` builder (replaces TestCafe Selector chains)
-- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns (extending `Helper`, reaching `this.helpers['Playwright']` / `this.helpers['REST']`)
-- `node_modules/codeceptjs/docs/api.md` — REST / GraphQL configuration, `setSharedCookies()`, `defaultHeaders`, `JSONResponse` assertions, Zod schemas
-- `node_modules/codeceptjs/docs/assertions.md` — built-in `see*` assertions, `ExpectHelper`, `codeceptjs/assertions` factories (use these instead of `if (cond) throw new Error(...)`)
-- `node_modules/codeceptjs/docs/pageobjects.md` — porting TestCafe Selector-based page objects
-- `node_modules/codeceptjs/docs/sessions.md`, `auth.md` — replaces `Role` + `t.useRole`
-- `node_modules/codeceptjs/docs/effects.md` — `tryTo`, `retryTo`, `within` (replaces `t.switchToIframe`)
-- `writing-codeceptjs-tests` — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
-- `debugging-codeceptjs-tests` — **use on every failing test from the first full run** (breakpoint, inspect live page via MCP, fix on the fly)
-- `codeceptjs-auth` — replace `Role` + `t.useRole`
-- `codeceptjs-fundamentals` — run **after** migration to confirm the new setup is wired correctly
+- `writing-codeceptjs-tests` — per-spec rewrite playbook (MCP-driven, verified steps); also the path to re-author Studio recordings
+- `debugging-codeceptjs-tests` — use on every failing test from the first full run
+- `codeceptjs-auth` — replaces `Role` + `t.useRole`
+- `codeceptjs-fundamentals` — run after migration to confirm wiring; effects (`tryTo`, `within`) replace `t.switchToIframe`
+- Reference docs: `node_modules/codeceptjs/docs/` (basics, playwright, locators, custom-helpers, api, assertions, pageobjects, sessions, auth)
