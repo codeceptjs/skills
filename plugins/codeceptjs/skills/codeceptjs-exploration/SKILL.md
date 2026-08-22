@@ -1,14 +1,11 @@
 ---
 name: codeceptjs-exploration
 description: >
-  Use to explore a page in CodeceptJS — read its ARIA tree, inspect candidate
-  elements, pick a stable locator. Drives the live browser through MCP
-  `run_code`, prefers ARIA over HTML, uses `I.grabWebElement` /
-  `I.grabWebElements` with permissive XPaths to enumerate candidates and
-  `toSimplifiedHTML` / `toAbsoluteXPath` to disambiguate. Other skills
-  (writing-codeceptjs-tests, debugging-codeceptjs-tests,
-  refactoring-codeceptjs-tests) invoke this whenever they need to learn what's
-  on a page.
+  Use when an agent needs to learn what's on a page in CodeceptJS — read the
+  ARIA tree, inspect candidate elements, pick or disambiguate a stable locator.
+  Drives the live browser via MCP `run_code` / `snapshot`. Invoked by
+  writing-codeceptjs-tests, debugging-codeceptjs-tests, and
+  refactoring-codeceptjs-tests whenever page inspection is needed.
 ---
 
 # CodeceptJS Page Exploration

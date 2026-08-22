@@ -1,12 +1,11 @@
 ---
 name: codeceptjs-fundamentals
 description: >
-  Run first when working with any CodeceptJS 4 project. Compact primer on the
-  internals you must know — configuration, the `I` actor, helpers, the DI
-  container, plugins, effects, locator conventions, the `await` rule — then a
-  four-step discovery (`check` → read config → `list` → `dry-run`) reporting
-  which helpers, plugins, page objects, custom actions, and tests are active.
-  Other CodeceptJS skills depend on this output.
+  Run first when working with any CodeceptJS 4 project — before writing,
+  debugging, refactoring, or migrating tests. Teaches the framework's
+  non-obvious rules and runs four-step discovery (`check` → read config →
+  `list` → `dry-run`) reporting which helpers, plugins, page objects, custom
+  actions, and tests are active. Other CodeceptJS skills depend on this output.
 ---
 
 # CodeceptJS Fundamentals
@@ -181,6 +180,7 @@ In order; skipping steps produces wrong guesses:
 2. **Read the active config**: helpers (+ browser/baseURL/viewport/env-driven values), plugins (incl. anything `setCommonPlugins()` injects), AI provider + required env var, env selection mechanism, page objects from `include`, custom helpers.
 3. **List actions**: `npx codeceptjs list -c <config>` (`--docs` adds JSDoc; `--action <name>` for one). The actual `I.*` surface differs from built-ins when custom helpers exist — always check before suggesting a method.
 4. **List tests**: `npx codeceptjs dry-run -c <config>` — `--steps` shows queued actions, `--grep` filters, `--numbers` gives per-test step indices matching MCP `pauseAt`.
+   - ⚠ `dry-run --grep` and `run --grep` do **not** select the same set (4.1.0): `run --grep` matches `Feature` + `Scenario`, `dry-run --grep` matches the Scenario title only. `dry-run --grep 'Dialogs'` lists 0 tests where `run --grep 'Dialogs'` executes all 11. Never size a run from a dry-run's grep, and target a whole Feature by file path (`run tests/foo_test.ts`) when the selection must be exact.
 
 Gherkin projects: `npx codeceptjs gherkin:steps -c <config>`.
 

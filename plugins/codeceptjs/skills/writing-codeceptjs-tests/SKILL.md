@@ -1,14 +1,10 @@
 ---
 name: writing-codeceptjs-tests
 description: >
-  Use when writing a new CodeceptJS 4 test, extending an existing Scenario, or
-  porting a manual test plan to code. Builds tests live — opens the real page
-  through the CodeceptJS MCP server, queries ARIA/HTML to learn locators, runs
-  each step incrementally to verify it works, then commits the verified sequence
-  to a test file. Two authoring modes — Mode A (incremental `run_code`) for known
-  flows, Mode B (scaffold-and-pause) for greenfield / unknown flows. Never
-  invents locators or flows from imagination; drives the actual browser. Trigger
-  on any request to create, write, add, draft, or scaffold a CodeceptJS test,
+  Use when creating a new CodeceptJS 4 test, extending an existing Scenario, or
+  porting a manual test plan to code. Builds tests against the live browser via
+  the CodeceptJS MCP server — never from imagined locators or flows. Trigger on
+  any request to create, write, add, draft, or scaffold a CodeceptJS test,
   login flow, end-to-end check, or "test from scratch".
 ---
 

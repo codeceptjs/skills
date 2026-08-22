@@ -1,12 +1,12 @@
 ---
 name: refactoring-codeceptjs-tests
 description: >
-  Use when refactoring CodeceptJS 4 tests — cleaning up duplication, extracting
-  page objects, taming long locators, moving raw JS into custom helpers. Works
-  targeted (one test or file) or global (whole tests directory). Always proposes
-  changes before applying. Trigger on phrases like "refactor my tests",
-  "clean up", "extract page object", "this test is too long", "deduplicate", or
-  when reviewing test files for quality.
+  Use when cleaning up existing CodeceptJS 4 tests — deduplication, extracting
+  page objects, taming long locators, moving raw JS into custom helpers.
+  Targeted (one file) or global (whole tests directory); always proposes before
+  applying. Trigger on "refactor my tests", "clean up", "extract page object",
+  "this test is too long", "deduplicate", or when reviewing test files for
+  quality.
 ---
 
 # Refactoring CodeceptJS 4 Tests

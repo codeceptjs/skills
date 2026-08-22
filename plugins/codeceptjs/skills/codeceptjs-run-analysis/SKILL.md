@@ -1,13 +1,10 @@
 ---
 name: codeceptjs-run-analysis
 description: >
-  Use after running CodeceptJS tests with the `aiTrace` plugin enabled —
-  analyse the trace artifacts (trace.md, per-step HTML/ARIA/screenshots, console
-  logs) via bash tools. Toolkit, not a workflow — use cases include verifying a
-  fix, clustering errors across a CI fail-storm, diagnosing flakiness across
-  reruns, or investigating a single failure. Other skills (writing-codeceptjs-tests,
-  debugging-codeceptjs-tests, refactoring-codeceptjs-tests) invoke this whenever
-  a run has happened and needs review. Trigger on phrases like "what failed",
+  Use after running CodeceptJS tests with the `aiTrace` plugin enabled and the
+  results need review — verify a fix held, investigate a single failure, cluster
+  errors across a CI fail-storm, diagnose flakiness across reruns. Invoked by
+  other CodeceptJS skills whenever a run has happened. Trigger on "what failed",
   "analyse the run", "cluster these errors", "is it flaky", "did the fix hold".
 ---
 

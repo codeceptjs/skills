@@ -1,17 +1,11 @@
 ---
 name: debugging-codeceptjs-tests
 description: >
-  Use when a CodeceptJS 4 test is failing, flaky, or behaving unexpectedly —
-  stack traces from `npx codeceptjs run`, intermittent failures, locator drift,
-  timing issues, "works locally fails in CI", "step through this test", "pause
-  at step N", "set a breakpoint". For AI agents the primary path is **MCP with
-  pause** — drop a `pause()` in the test (or pass `pauseAt: N` to `run_test` for
-  a no-edit breakpoint), inspect via `run_code` / `snapshot`, release with
-  `continue`. Step indices come from `npx codeceptjs dry-run --debug --grep <test>
-  --numbers --no-ansi`. CLI debugging is the fallback for humans, CI repros, and
-  framework-internal issues. Don't fix from the error message alone; capture
-  page state and read it. Trigger on broken or flaky tests, run errors, "why
-  does this fail", trace/screenshot/console mentions, breakpoint/pause requests.
+  Use when a CodeceptJS 4 test fails, flakes, or behaves unexpectedly. Trigger
+  on run errors and stack traces from `npx codeceptjs run`, intermittent
+  failures, locator drift, timing issues, "works locally fails in CI", "why
+  does this fail", trace/screenshot/console mentions, and breakpoint /
+  step-through / "pause at step N" requests.
 ---
 
 # Debugging CodeceptJS 4 Tests
@@ -75,7 +69,9 @@ npx codeceptq 'Save' '.modal' --click --file output/trace_*/0005_*_page.html  # 
 npx codeceptq 'Username' --field --json --file ...                     # machine-readable
 ```
 
-Key flags: `--field/--click/--checkable/--select` force semantic strategies; `--xpath`/`--css` override auto-detection (a bare tag name like `select.foo` is treated as fuzzy text); `[context]` second positional restricts scope; exit codes `0` match / `1` none / `2` invalid input.
+Key flags: `--field/--click/--checkable/--select` force semantic strategies; `--xpath`/`--css` override auto-detection (a bare tag name like `select.foo` is treated as fuzzy text); exit codes `0` match / `1` none / `2` invalid input.
+
+> ⚠ **The `[context]` second positional does not scope** (CodeceptJS 4.1.0). It prints `N matches within '<ctx>'` but returns page-wide results — `lib/command/query.js` evaluates an absolute XPath (`//…`) against the context node, and `//foo` re-roots at the document. It will report a match inside a container that does not hold the element. To check a scoped locator offline, pass one composed selector (`codeceptq '.modal button[aria-label="Save"]'`) and compare its count against the unscoped form; a context-dependent locator is only truly verified by running the step.
 
 ## Inspect deeper
 

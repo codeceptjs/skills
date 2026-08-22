@@ -1,15 +1,10 @@
 ---
 name: codeceptjs-auth
 description: >
-  Use when a CodeceptJS test needs login, when different user roles are
-  involved, or when writing-codeceptjs-tests identifies authorization is
-  required. Configures the `auth` plugin for session reuse, derives the login
-  flow from the actual login page HTML (not guesses), keeps the real flow inside
-  `steps_file.js` so `I.login*()` is callable directly and the conf stays small,
-  loads credentials from `.env` via Node's `process.loadEnvFile()`, supports
-  multiple roles and token/localStorage sessions. Trigger on mentions of login,
-  sign-in, sign-up, authentication, sessions, "logged in", admin/editor/user
-  roles, or auth-related test failures.
+  Use when a CodeceptJS test needs login, user roles, or session reuse — or
+  when another CodeceptJS skill identifies authorization is required. Also on
+  auth-related test failures. Trigger on login, sign-in, sign-up,
+  authentication, sessions, "logged in", admin/editor/user roles.
 ---
 
 # CodeceptJS Auth Plugin
