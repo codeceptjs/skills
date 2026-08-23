@@ -1,158 +1,196 @@
 ---
 name: codeceptjs-fundamentals
-description: "Run first when working with any CodeceptJS 4 project. Compact primer on the internals you must know — configuration, the `I` actor and helpers, the DI container and `inject()`, custom helpers (and the rule that `I` is unreachable from inside one), plugins as hook listeners, and the `await` rule. Then runs a four-step discovery against this project: `codeceptjs check` to verify the setup loads, read the config, run `codeceptjs list` to enumerate available `I.*` actions, run `codeceptjs dry-run` to enumerate existing tests — and reports which helper, plugins, env switching, page objects, custom actions, and test suites are actually active. Other CodeceptJS skills depend on this output."
+description: >
+  Run first when working with any CodeceptJS 4 project — before writing,
+  debugging, refactoring, or migrating tests. Teaches the framework's
+  non-obvious rules and runs four-step discovery (`check` → read config →
+  `list` → `dry-run`) reporting which helpers, plugins, page objects, custom
+  actions, and tests are active. Other CodeceptJS skills depend on this output.
 ---
 
 # CodeceptJS Fundamentals
 
-Two jobs: teach the concepts you need to read CodeceptJS code without making things up, and report what *this* project has configured. Do both, in order.
+Two jobs, in order: learn the rules below, then discover what *this* project has configured.
 
----
+## Gate
 
-## Concepts
+- CodeceptJS 4 is **ESM/TypeScript only**; tests, configs, page objects, helpers use `import`/`export`.
+- No `"type": "module"` in package.json → add it before anything else.
+- TypeScript: config `codecept.conf.ts`, TS loader entry in `require: [...]`.
+- Project on 3.x or CommonJS (`require()`, removed plugins like `autoLogin`, helper `Nightmare`) → stop, recommend `migrate-codeceptjs-4`. Don't patch files piecemeal — migration is whole-project.
 
-### Module system
-CodeceptJS 4 is **ESM and TypeScript only**. Tests, configs, page objects, and helpers use `import`/`export`; `package.json` **must** have `"type": "module"` — if it isn't there yet, add it before doing anything else (without it, every `.js` file is parsed as CommonJS and imports fail). **TypeScript** is first-class: name the config `codecept.conf.ts`, add a loader entry like `require: ['tsx/cjs']` (or `ts-node/register`), and write tests as `.ts` files.
+## Main rule
 
-If the project is on **CodeceptJS 3.x or still uses CommonJS** (`require()` / `module.exports`, no `"type": "module"`, removed helpers/plugins like `autoLogin` or `Nightmare`), stop here and run the **`migrate-codeceptjs-4`** skill — it walks the full upgrade path (Node bump, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, `noGlobals`, dependency bumps, verify). Don't try to half-fix individual files; the migration is a whole-project change.
+- Tests are written from the user's perspective: a linear scenario of actions, readable as prose.
+  - Good: `I.click('Login')`, `I.fillField('Email', ...)`, `I.see('Welcome')`
+- **Tests are declarative, helpers imperative — recommended layering:**
+  - Scenario shows *what* the user does via `I.*`; implementation details live below
+  - Low-level access (`this.helpers['Playwright'].page`, fetch, filesystem) works fine inside a Scenario, but it's recommended to push it into a helper and expose one `I.*` action instead
+- Keep tests short: repeated sequences → actor method, page object, or step object.
+- Prefer semantic locators over selectors so tests survive markup churn.
 
-### Configuration
-`codecept.conf.{js,ts,mjs,cjs}` at the repo root. Top-level keys: `helpers`, `plugins`, `include`, `ai`, `bootstrap`/`teardown`, `tests`, `output`, `timeout`. TypeScript configs declare a loader in `require: [...]` (`tsx/cjs`, `ts-node/register`, `ts-node/esm`). Multiple env-specific files (`codecept.ci.conf.js`, …) are selected via `--config <file>`. The `@codeceptjs/configure` package mutates the resolved config at load time (`setHeadlessWhen`, `setBrowser`, `setCommonPlugins`, `setWindowSize`) — static fields can lie until you grep for that import.
+## Where things go (recommended placement)
 
-### `I` and helpers
-`I` is the actor. Every `I.<method>(...)` is dispatched to whichever active helper provides that method. Built-in helpers contribute different surfaces: web (Playwright, Puppeteer, WebDriver — overlapping core actions plus helper-specific extras), API (REST, GraphQL), AI, mobile (Appium), utility (FileSystem). The active helpers are exactly the keys under `helpers` in config.
+- Site-wide actions (`login`, dropdowns, rich text editors) → **actor file** (custom steps)
+- Page/screen actions + locators → **page object**; SPA screen = one page object
+- Site-wide widgets (nav, modals, datepickers) → **page fragments / component objects**
+- Low-level driver access (DB connections, email, filesystem, complex mouse) → **helper**
+- Data creation/cleanup via API → **data objects** (REST/GraphQL helper + `_after()` cleanup), or `ApiDataFactory` (`I.have(...)`)
+- Don't overengineer: no page object until an abstraction is reused across tests.
 
-### `inject()` and the DI container
-Everything testable lives in a global container — the actor, every helper, every page object listed in `include`, every custom step module, every support object. Inside a Scenario you destructure from the test signature: `Scenario('...', ({ I, loginPage }) => { ... })`. Inside a *file* (page object class, data factory, custom helper module) call `const { I } = inject()` once at the top to pull what you need from the container. The names available are exactly the keys in `include`.
+## Shortcuts
 
-### Custom helpers
-Custom helpers extend `Helper` (from `codeceptjs`) and contribute new `I.<method>` calls. They register under `helpers` in config alongside built-ins. **You cannot call `I.*` from inside a custom helper — `I` does not exist in helper scope.** To compose with another helper, reach for it via `this.helpers['<Name>']` (e.g. `this.helpers['Playwright'].page` or `this.helpers['REST'].sendGetRequest(...)`). Helpers exist to expose new low-level capabilities; tests stay in the `I.*` vocabulary.
+- Login needed → `autoLogin` plugin or actor method, not inline steps per test
+- Test data → create via API before the test, not through the UI
+- Long test → break into several; long tests are fragile and hard to follow
+- Optional UI element / conditional flow → `await tryTo(...)` instead of `if (await I.grab...)` — keeps scenarios linear
 
-### Plugins and hooks
-Plugins are event listeners. CodeceptJS emits lifecycle events on a global dispatcher; any plugin can subscribe. Events include `suite.before`/`after`, `test.before`/`started`/`passed`/`failed`/`after`, `step.before`/`started`/`passed`/`failed`/`after`, `hook.passed`/`failed`, `multiple.before`/`after`. Plugins react — taking screenshots, retrying, healing, writing artifacts, pausing. Built-ins live under `node_modules/codeceptjs/lib/plugin/`; the full event list is in `node_modules/codeceptjs/lib/event.js`. A plugin is registered under `plugins` with `enabled: true`. `setCommonPlugins()` from `@codeceptjs/configure` enables a recommended bundle silently.
+## Architecture
 
-### Plugins worth knowing
-- `retryFailedStep` — re-runs a transient action failure
-- `screenshot` — saves a screenshot when a step matches the trigger (default `on: 'fail'`); set `slides: true` to also produce a `output/records.html` slideshow (replaces the old `stepByStepReport`)
-- `pageInfo` — dumps URL, HTML, console output on failure
-- `auth` — session reuse for login (see the `codeceptjs-auth` skill)
-- `aiTrace` — per-step screenshots/HTML/ARIA/console for AI debugging (default `on: 'step'`; set `on: 'fail'` to capture only failures)
-- `pause` — interactive pause (replaces `pauseOn` / `pauseOnFail`; default `on: 'fail'`)
-- `heal` — AI-suggested fixes for broken action steps (disabled in `--debug` mode)
-- `screencast` — records a video / animated frames of the run (replaces `subtitles`)
-- `browser` — CLI-only override of browser helper config; see the next section
+- **Config**: `codecept.conf.{js,ts,mjs,cjs}` at repo root; multiple files selected via `--config <file>`.
+- **Helpers execute; `I` delegates.** Every `I.<method>` is routed to whichever active helper implements it (Playwright, WebDriver, Puppeteer, Appium share one API surface). Active helpers = keys under `helpers`. Tests call the actor, never the engine — backends stay swappable.
+- **DI container** — why it exists:
+  - Everything shared (actor, helpers, page objects, support objects) registers under one container; `include` maps names → modules
+  - Classes are auto-instantiated by the container — no `new`, no manual wiring
+  - **`inject()` returns lazy proxies**: destructuring at module top resolves at call time, so circular page-object references work where plain `import` would give `undefined`
+  - Access: destructure in Scenario signature (`Scenario('...', ({ I, loginPage }) => ...)`) or `const { I } = inject()` once per file
+- **Custom helpers** extend `Helper`, register under `helpers`, add new `I.*` methods.
+  - **`I` does not exist inside a helper.** Compose via `this.helpers['<HelperName>']` (e.g. `this.helpers['Playwright'].page`, `this.helpers['REST'].sendGetRequest(...)`).
+- **Plugins** are event listeners on lifecycle events (`suite.*`, `test.*`, `step.*`, `hook.*`, `multiple.*`). Full list: `node_modules/codeceptjs/lib/event.js`. Register under `plugins` with `enabled: true`.
 
-### Running plugins from the CLI
-Plugins are normally enabled in `codecept.conf.{js,ts}`, but any plugin can be turned on or reconfigured for a single run via `-p <plugin>` on the runner. Args chain with `:` (or `;` inside one arg):
+## Config mutation trap
 
-```bash
-npx codeceptjs run -p aiTrace                      # enable aiTrace for this run
-npx codeceptjs run -p screenshot:on=step           # screenshot every step
+- `@codeceptjs/configure` mutates resolved config at load time (`setHeadlessWhen`, `setBrowser`, ...). Static values can lie — grep for its import before trusting `show:` / `browser:` fields.
+- `setCommonPlugins()`: **enables** `retryFailedStep` + `screenshot`; **registers** (off until `-p`) `pause`, `browser`, `aiTrace`, `heal`.
+
+## Plugins worth knowing
+
+- `retryFailedStep` — retries transient step failures
+- `screenshot` — screenshots on failure; `slides: true` → `output/records.html` slideshow
+- `pageInfo` — dumps URL/HTML/console on failure
+- `auth` — session reuse for login (see `codeceptjs-auth` skill)
+- `aiTrace` — per-step screenshots/HTML/ARIA/console for AI debugging
+- `pause` — interactive pause
+- `heal` — AI-suggested fixes for broken steps (off in `--debug`)
+- `screencast` — video of the run
+- `customLocator` — maps `$name` prefix to team's test attribute (`data-testid`, `data-qa`)
+- `browser` — CLI-only override of browser helper config (see below)
+
+Note: `tryTo`, `retryTo`, `eachElement` are not plugins in 4.x — import them from `codeceptjs/effects`.
+
+## Plugins from CLI
+
+Any plugin can be enabled/reconfigured per-run with `-p <plugin>`, args chained with `:`:
+
+```sh
+npx codeceptjs run -p aiTrace                    # enable for this run
+npx codeceptjs run -p screenshot:on=step         # reconfigure inline
 npx codeceptjs run -p pause:on=file:path=tests/login_test.js;line=43
-npx codeceptjs run -p browser:hide:browser=firefox:windowSize=1280x800
 ```
 
-`screenshot`, `pause`, `aiTrace`, and `heal` share a unified **`on=` parameter** that picks when they fire:
+- `screenshot`, `pause`, `aiTrace`, `heal` share an `on=` trigger: `fail` (default except aiTrace) | `step` | `test` | `file:path=...;line=N` | `url:pattern=<glob>`
+- `browser` plugin overrides without touching config — CI matrix legs, one-off env variants:
+  - `-p browser:hide` / `-p browser:show` / `-p browser:browser=firefox` / `-p browser:windowSize=1280x800`
+  - Requires `@codeceptjs/configure`
 
-| `on=` value | Fires when | Extra args |
-|---|---|---|
-| `fail` | a step fails (default for screenshot / pause / heal) | — |
-| `step` | every step (default for aiTrace) | — |
-| `test` | after each test | — |
-| `file` | execution reaches a file/line | `path=<file>[;line=<N>]` |
-| `url` | browser URL matches a pattern | `pattern=<glob>` (`*` wildcards) |
+## Effects (`codeceptjs/effects`)
 
-The **`browser` plugin** is CLI-only and overrides the active browser helper without touching the config file — useful for one-off env variants and CI matrix legs:
+Flow-control functions imported from `codeceptjs/effects`. In 4.x these are no longer plugins/globals.
 
-```bash
-npx codeceptjs run -p browser:show                              # force visible
-npx codeceptjs run -p browser:hide                              # force headless
-npx codeceptjs run -p browser:browser=firefox                   # switch browser
-npx codeceptjs run -p browser:windowSize=1024x768
-npx codeceptjs run -p browser:hide:browser=webkit:windowSize=800x600
-```
+- **`tryTo(() => ...)`** — runs steps that may fail without stopping the test; returns `boolean`.
+  - **Prefer `tryTo` over `if`:** scenarios should stay linear — instead of branching on a grabbed value to decide whether a UI state exists, attempt the optional steps and branch on the boolean result:
+    ```js
+    const banner = await tryTo(() => { I.see('Cookie banner'); I.click('Accept cookies') })
+    if (!banner) I.say('No cookie banner')
+    ```
+  - Auto-retries are disabled inside `tryTo` blocks.
+- **`retryTo(() => ..., maxTries, pollInterval = 200)`** — retries a step block until it succeeds (flaky elements, animations); callback receives the current attempt count.
+- **`hopeThat(() => ...)`** — soft assertions (see Assertions); end with `hopeThat.noErrors()`.
+- **`within(locator | { frame }, fn)`** — scopes resolution to subtree or iframe; can return values (`await`). Prefer the context parameter of individual actions (`I.click('Save', '.toolbar')`) when possible — reserve `within` for genuinely scoped blocks.
 
-Requires `@codeceptjs/configure` installed. It translates `browser=` per helper (Puppeteer's `product`, Playwright's `browser`) and injects `--headless` into WebDriver capability args when toggling `hide`.
+All effects return Promises — `await` them.
 
-### Test file structure
-One `Feature(...)` per file with one or more `Scenario(...)` blocks inside it. CodeceptJS does **not** allow nested suites or multiple Features in the same file. Hooks: `Before`, `After`, `BeforeSuite`, `AfterSuite`, plus `Fail((test, err) => { ... })` for failure-only cleanup. Page objects can expose `_before`, `_after`, `_afterSuite` lifecycle methods so per-page setup lives next to the page.
+## Element-based API (`codeceptjs/els`)
 
-### Locators
-Most actions accept a locator as a plain string (semantic — visible text, label, placeholder, `name`) or an object (`{ css }`, `{ xpath }`, `{ role, name }`, `{ id }`, `{ aria }`). Prefer ARIA `{ role, name }` for resilience to markup changes; semantic strings for prototyping; CSS / XPath as fallback. The `locate(...)` builder composes complex queries (`.withClass`, `.withText`, `.inside`, `.and`, `.andNot`). Almost every action method takes an optional context arg that narrows the search to a subtree: `I.click('Save', '.modal')`.
+Hybrid style: mix `I.*` with direct element access. Import `{ element, eachElement, expectElement, expectAnyElement, expectAllElements } from 'codeceptjs/els'`.
 
-### Auto-waiting
-Action methods (`click`, `fillField`, `selectOption`, …) automatically wait for the element to exist and become interactable before acting. Explicit `I.waitFor*` calls are needed only when the next condition isn't tied to an interaction — a modal appearing after a network call, a spinner disappearing, a value updating. Avoid `I.wait(N)` (raw seconds) unless nothing else fits.
+- `element(locator, async el => { ... })` — scoped access to one element; chain `el.$(locator)` into children without re-querying
+- `eachElement(locator, async (el, index) => ...)` — iterate collections
+- `expectElement` / `expectAnyElement` / `expectAllElements(locator, fn)` — custom conditions
+- Elements are `WebElement` wrappers — same API on all helpers: `getText()`, `getAttribute()`, `isVisible()`, `isEnabled()`, `getBoundingBox()`, `exists()`, `$$()`
+- Optional purpose string improves debug logs: `element('verify discount applied', '.price', ...)`
+- Use when built-ins don't cover it: collections, layout checks (`getBoundingBox`), per-element loops, chaining ops on one element. Prefer `I.*` for readability otherwise.
 
-### Assertions
-CodeceptJS ships built-in browser assertions: `I.see`, `I.dontSee`, `I.seeElement`, `I.dontSeeElement`, `I.seeInCurrentUrl`, `I.seeInTitle`, `I.seeInField`, `I.seeNumberOfElements`, `I.seeCookie`, `I.seeCheckboxIsChecked`, etc. Use these instead of an external `expect()` library — they produce clear failure messages and integrate with the recorder. For non-DOM assertions, use `grab*` plus any assertion library: `const title = await I.grabTitle(); expect(title).toEqual('My App')`.
+## Writing tests
 
-### `await` inside tests
-CodeceptJS queues steps onto an internal recorder; the framework chains them, you do not. **Use `await` only when you need a return value** — `await I.grabTextFrom(...)`, `await I.grabCookie(...)`, or when calling a user-defined `async` function. Plain action steps (`I.click`, `I.fillField`, `I.see`) do not need `await`. Same rule inside `within(...)` and `pause()` callbacks. Sprinkling unnecessary `await` doesn't break anything, but signals you don't trust the recorder.
+- Structure: one `Feature(...)` per file, one or more `Scenario(...)` inside. No nested suites, no multiple Features per file.
+- Hooks: `Before`, `After`, `BeforeSuite`, `AfterSuite`, `Fail(...)`.
+- Page object lifecycle hooks: `_before()` (lazy, once per test, on first use), `_after()` (skipped if unused), `_beforeSuite()`, `_afterSuite()`.
+- **`await` required for**: `grab*` methods, imported functions, page-object methods containing async ops (elsewhere: unhandled rejections). Never for plain action steps — the recorder chains them.
+- Secrets: `I.fillField('Password', secret(process.env.PASSWORD))` — masks logs, traces, AI prompts. Import from `codeceptjs`.
+- Sessions: `session(name, fn)` — parallel browser context for multi-user Scenarios (chat, multi-tenant).
 
-### `secret()` for sensitive values
-Wrap passwords, tokens, API keys so they're masked in logs, step output, and trace artifacts: `I.fillField('Password', secret(process.env.PASSWORD))`. Imported from `codeceptjs`. Use anywhere a value would otherwise leak through verbose output, trace files, or AI prompts.
+## Locators
 
-### Sessions and `within`
-- `session(name, fn)` runs `fn` in a parallel browser context — for multi-user Scenarios (chat, multi-tenant). Combined with the `auth` plugin, each session can log in as a different role.
-- `within(locator, fn)` scopes locator resolution inside `fn` to the subtree under `locator`. `within({ frame: '#editor' }, fn)` switches into an iframe for the callback. Both can return values (`await within(..., () => I.grabTextFrom(...))`).
+- **ARIA locators are strongest** — resilient to CSS refactors, describe what the user sees:
+  - `I.click({ role: 'button', name: 'Save' })`
+- Actions accept plain strings (visible text, label, placeholder, `name`, `aria-label`) or objects (`{ css }`, `{ xpath }`, `{ id }`).
+- Plain string already matches `aria-label` — no `'aria-label=...'` prefix needed.
+- **Pass context as last argument** — scoped semantic locator beats long unscoped one:
+  - `I.click('Save', '.toolbar')` not `I.click('#toolbar .btn-save')`
+- Avoid style-based class names (`.bg-green`); prefer semantic ones (`.btn-save`).
+- `data-testid`/`data-qa` apps → enable `customLocator`, write `$name`.
+- No semantic name fits → `locate(...)` builder (`.withClass`, `.withText`, `.inside`, `.and`): `locate('.button').withText('Click me')`.
 
-### Parallel runs
-`npx codeceptjs run-workers <N>` splits Scenarios across N Node worker threads; results aggregate in the main process. The config can also describe **profiles** (different browsers, viewports, environments) via the `multiple` block; launch with `npx codeceptjs run-multiple <profile>`.
+## Waiting
 
----
+- Action steps auto-wait for existence + interactability. Add explicit `waitFor*` only when the condition isn't tied to an interaction (modal after network call, spinner hiding).
+- Avoid `I.wait(N)` — last resort.
+
+## Assertions
+
+Built-in browser assertions come first: `I.see`, `I.seeTextEquals`, `I.seeElement`, `I.seeInField`, `I.seeNumberOfElements`, `I.seeInCurrentUrl` (+ `dontSee*` counterparts). Clear failures, recorder-integrated. `see` matches *visible* text; hidden DOM content needs `seeInSource` / `seeElementInDOM`.
+
+For what built-ins don't cover, in order of preference:
+
+1. **Reusable custom assertion** in a helper — `I.seeTableIsOrdered('Price', 'desc')`; name positives `see*`, negatives `dontSee*`; use `codeceptjs/assertions` inside, never raw `throw new Error()`
+2. **ExpectHelper** (`@codeceptjs/expect-helper`) — chai matchers on `I`: `I.expectEqual`, `I.expectDeepEqualExcluding`, `I.expectMatchesPattern`, `I.expectJsonSchema`; appears in step log like other steps
+3. **`codeceptjs/assertions`** directly — dependency-free factories: `equals(subject).assert(actual, expected)` / `.negate(...)`; failure messages match `I.see` formatting
+4. **Any library** on grabbed data (`grab*` always needs `await`) — chai/jest/`node:assert`; fails the test but won't show as a step
+
+Soft assertions: `hopeThat(() => I.see(...))` from `codeceptjs/effects` — logs each failure and continues; end with `hopeThat.noErrors()` to fail if any were recorded.
+
+## Parallel runs
+
+- `run-workers <N>` — splits Scenarios across worker threads
+- `run-multiple <profile>` — profiles via `multiple` block in config (browsers, viewports)
+
+## Config organization (recommended)
+
+- Multiple config files per environment (`codecept.conf.js`, `codecept.ci.conf.js`, ...); share parts via modules in a `config/` dir
+- `.env` files + `dotenv` for secrets/env-specific values
+- Bulk-register page objects/components by spreading exported maps into `include`
+- Pass data from config/bootstrap into tests via `codeceptjs.container.append({ testUser })` — injectable by name
 
 ## Discover this project
 
-Four steps, in order. Don't skip — guesses about helpers, custom actions, or what tests exist will be wrong as often as they're right.
+In order; skipping steps produces wrong guesses:
 
-### 1. Verify the setup loads
+1. **Verify setup loads**: `npx codeceptjs check -c <config>` — validates everything; output doubles as inventory. Fix failures before continuing.
+2. **Read the active config**: helpers (+ browser/baseURL/viewport/env-driven values), plugins (incl. anything `setCommonPlugins()` injects), AI provider + required env var, env selection mechanism, page objects from `include`, custom helpers.
+3. **List actions**: `npx codeceptjs list -c <config>` (`--docs` adds JSDoc; `--action <name>` for one). The actual `I.*` surface differs from built-ins when custom helpers exist — always check before suggesting a method.
+4. **List tests**: `npx codeceptjs dry-run -c <config>` — `--steps` shows queued actions, `--grep` filters, `--numbers` gives per-test step indices matching MCP `pauseAt`.
+   - ⚠ `dry-run --grep` and `run --grep` do **not** select the same set (4.1.0): `run --grep` matches `Feature` + `Scenario`, `dry-run --grep` matches the Scenario title only. `dry-run --grep 'Dialogs'` lists 0 tests where `run --grep 'Dialogs'` executes all 11. Never size a run from a dry-run's grep, and target a whole Feature by file path (`run tests/foo_test.ts`) when the selection must be exact.
 
-```sh
-npx codeceptjs check -c <config>          # validates config, container, helpers, plugins, page objects, hooks, tests, defs
-```
+Gherkin projects: `npx codeceptjs gherkin:steps -c <config>`.
 
-Each item prints a pass/fail line, so the output doubles as a quick inventory of what the project has wired up. If anything fails here, fix it before running `list` or `dry-run` — a broken helper or unresolved page object will distort their output. Skipping this step also means you won't notice a missing dependency, an `auth` plugin pointed at a non-existent login route, or a custom helper that throws at construction.
-
-### 2. Read the active config
-
-Open `codecept.conf.{js,ts,mjs,cjs}` (resolve via `package.json` scripts and CI workflows if multiple files exist — note the path; you'll pass it to `-c` in steps 3 and 4). Extract: which helper(s) and any non-default behaviour (browser, strict, navigation, base URL, viewport, env-driven values); which plugins (incl. anything `setCommonPlugins()` injects); AI provider + the env var its key requires; how environments are selected (`--config` vs `process.env.*` branching, plus any `setHeadlessWhen`-style mutations); page object names from `include`; any custom helpers (entries pointing at local files).
-
-### 3. List available actions
-
-```sh
-npx codeceptjs list -c <config>          # every I.<method>, grouped by helper, with signature
-npx codeceptjs list --docs -c <config>   # adds JSDoc + docs/webapi/* prose under each action
-npx codeceptjs list --action <name> -c <config>   # single action; I. prefix optional; implies --docs
-```
-
-Run `list` against the discovered config before suggesting any method — especially in projects with custom helpers, where the available `I.*` surface differs from the built-in catalog. The CodeceptJS MCP server's `list_actions` tool returns the same data programmatically.
-
-### 4. List existing tests
-
-```sh
-npx codeceptjs dry-run -c <config>            # suite + test names that the config would load
-npx codeceptjs dry-run --steps -c <config>    # also prints queued I.* steps inside each test
-npx codeceptjs dry-run --grep "@smoke" -c <config>   # filter by name; --features / --tests narrow file kind
-npx codeceptjs dry-run --debug --grep '<test>' --numbers --no-ansi -c <config>   # numbered steps, no ANSI
-```
-
-`dry-run` walks the test files the active config picks up and prints them without executing — confirming both **which tests exist** and (with `--steps`) **what each Scenario would do** before any browser spins up.
-
-`--numbers` (paired with `--debug`, `--steps`, or `--verbose`) prefixes each leaf step with a per-test 1-based index. The numbering matches the `pauseAt: N` parameter on the MCP `run_test` tool — so this is the canonical way to discover step indices for programmatic breakpoints. `--no-ansi` strips colors / ANSI escapes so the output is clean for LLM consumption or piping to other tools.
-
-For Gherkin step definitions specifically, `npx codeceptjs gherkin:steps -c <config>` lists registered step patterns.
+Reference docs live under `node_modules/codeceptjs/docs/` — read them instead of guessing APIs.
 
 ## Report
 
-Short prose summary covering the items above. Flag env-driven values explicitly — don't claim a fixed value when it's `process.env.BROWSER || 'chromium'`. Flag conflicts (static `show: true` overridden by `setHeadlessWhen(CI)`; `auth` configured but the credential env vars are missing from the current shell or `.env.example`). If no config exists at the repo root and no `--config` is referenced anywhere, recommend `npx codeceptjs init .` and stop. **If the project is on CodeceptJS 3.x or CommonJS, recommend the `migrate-codeceptjs-4` skill and stop** — discovery output for a pre-4 project will misrepresent the available APIs.
+Short prose summary. Must include:
 
-## Pointers
-
-- `node_modules/codeceptjs/docs/configuration.md` — config reference
-- `node_modules/codeceptjs/docs/typescript.md` — TS loader options
-- `node_modules/codeceptjs/docs/helpers.md` — helper concepts and method catalogs
-- `node_modules/codeceptjs/docs/custom-helpers.md` — writing your own
-- `node_modules/codeceptjs/docs/plugins.md` — plugin authoring + built-ins
-- `node_modules/codeceptjs/docs/hooks.md` — suite/test/step hook semantics
-- `node_modules/codeceptjs/lib/event.js` — every event the dispatcher emits
-- `@codeceptjs/configure` (npm) — the mutator API surface
+- Env-driven values flagged as env-driven (`process.env.BROWSER || 'chromium'`, not just `'chromium'`)
+- Conflicts flagged (static `show: true` vs `setHeadlessWhen(CI)`; `auth` configured but credential env vars missing)
+- No config at root and no `--config` referenced → recommend `npx codeceptjs init .`, stop
+- 3.x/CommonJS detected → recommend `migrate-codeceptjs-4`, stop

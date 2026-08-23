@@ -1,6 +1,6 @@
 ---
 name: migrate-protractor-to-codeceptjs
-description: "Port a Protractor test suite to CodeceptJS 4. Trigger when the project contains `protractor.conf.{js,ts}`, `protractor` in `devDependencies`, `*.e2e-spec.{js,ts}` files, an `e2e/` (or `protractor/`) directory with spec files, `@types/jasmine` / `jasmine-spec-reporter` in dependencies, imports from `protractor` (`browser`, `element`, `by`, `ExpectedConditions`, `ElementFinder`, `ElementArrayFinder`), or code calling `element(by.X(...))`, `element.all(...)`, `by.addLocator(...)`, `browser.get(...)`, `browser.executeScript(...)`, `browser.wait(EC.*)`, `browser.waitForAngular(...)`, `browser.ignoreSynchronization`, `browser.params.*`, or `browser.driver.*`. Walks the port end-to-end: inventory shared logic (page objects — Protractor projects almost always have them, custom locators via `by.addLocator`, shared helpers, `onPrepare` / `onComplete` hooks, Jasmine custom matchers), install CodeceptJS with the Playwright helper alongside Protractor, port the config, split shared helpers into `WebExtra` (browser-driven via Playwright `page`) and `ApiExtras` (HTTP via REST helper, never `browserContext.request.*`), port existing page objects to CodeceptJS page objects without inventing assertion/one-liner wrappers, replace `.then(...)` promise chains with `await` only on grabs, drop `browser.waitForAngular()` / `browser.ignoreSynchronization` (CodeceptJS auto-waits), translate `element(by.X(...))` to semantic strings / ARIA / `locate()` / `{ css }`, register `by.addLocator` strategies via the `customLocator` plugin or `WebExtra`, convert specs (handing off to `writing-codeceptjs-tests`), replace `browser.params` with `process.env`, swap Jasmine `expect()` matchers for `I.see*` / `ExpectHelper` / `codeceptjs/assertions`, then decommission Protractor."
+description: "Port a Protractor test suite to CodeceptJS 4. Trigger when the project contains `protractor.conf.{js,ts}`, `protractor` in `devDependencies`, `*.e2e-spec.{js,ts}` files, an `e2e/` (or `protractor/`) directory with spec files, `@types/jasmine` / `jasmine-spec-reporter` in dependencies, imports from `protractor` (`browser`, `element`, `by`, `ExpectedConditions`), or code calling `element(by.X(...))`, `element.all(...)`, `by.addLocator(...)`, `browser.get(...)` / `browser.executeScript(...)` / `browser.wait(EC.*)` / `browser.waitForAngular(...)` / `browser.ignoreSynchronization` / `browser.params.*`."
 ---
 
 # Migrate Protractor → CodeceptJS 4
@@ -13,7 +13,7 @@ Three foundational differences to internalize:
 2. **Helpers, not `browser` / `driver`.** `I.*` dispatches to a configured helper. **Playwright recommended**; WebDriver is also available if the suite must keep running against a Selenium Grid — test code is identical either way.
 3. **Auto-wait, not Angular-wait.** Drop `browser.waitForAngular()` and `browser.ignoreSynchronization`. The Playwright and WebDriver helpers wait on DOM and element stability, which covers Angular's render cycle without a framework-specific hook.
 
-Authoritative references: `node_modules/codeceptjs/docs/basics.md`, `locators.md`, `playwright.md`, `webdriver.md`, `custom-helpers.md`, `pageobjects.md`.
+Authoritative reference: `node_modules/codeceptjs/docs/` (basics, locators, playwright, webdriver, custom-helpers, pageobjects).
 
 ## When to trigger
 
@@ -215,30 +215,26 @@ for (const row of await I.grabWebElements('.row')) {
 }
 ```
 
-**Dry-run as you go.** After each batch of converted specs, run:
+**Per batch**: `npx codeceptjs dry-run --steps -c <config>` — loads every Scenario, resolves every `I.*` call, no browser. Surfaces typos, missing imports, page objects not under `include`, and nonexistent verbs in seconds. Fix before anything real.
 
-```bash
-npx codeceptjs dry-run --steps -c <config>
-```
+Then run the batch: `npx codeceptjs run --steps -c <config>`.
 
-It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
-
-**Then run the whole batch for real.** Dry-run proves specs parse and resolve — not that they pass. As soon as a batch is dry-run clean, run it against the browser:
-
-```bash
-npx codeceptjs run --steps -c <config>
-```
-
-First real runs after a migration almost always have failures — locator drift, timing the source framework hid behind its own retry, auth/session differences, data assumptions. **This is expected; fixing it is part of the migration, not a follow-up task.** When a test fails, **invoke the `debugging-codeceptjs-tests` skill and fix it on the fly** — it breakpoints the failing step, inspects the live page via MCP, finds the working locator/wait, and commits the verified fix. Do not bulk-rewrite specs blind, and do not mask failures with `retry`. Drive every failure to a real fix before starting the next batch. A batch is "done" when it runs green, not when it dry-runs clean.
+- First real runs almost always fail — locator drift, timing the ControlFlow hid behind its own queueing, auth/session differences, data assumptions. **Expected; fixing it is part of the migration.**
+- Every failure → invoke `debugging-codeceptjs-tests` and fix on the fly (breakpoint, live-page inspection, verified fix). No blind rewrites, no `retry` masking.
+- A batch is done when it runs green, not when it dry-runs clean.
 
 ### 6. Locator preference
 
-CodeceptJS priority — pick the highest that fits:
+**Scope every locator with a context.** The last argument of every action narrows the lookup to a region — `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`, `I.click({ role: 'button', name: 'Delete' }, '.modal')`. A short semantic or ARIA locator plus a context beats one long unscoped locator: it reads like the page, disambiguates duplicate labels without growing, and survives markup churn. Apply this to every row of the tables below — the source framework's chain usually splits cleanly into *region* + *what the user sees*.
 
-1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save')`, `I.fillField('Email', 'u@t.com')`. Covers Protractor's `by.linkText`, `by.buttonText`, `by.partialButtonText`, `by.partialLinkText` cleanly.
-2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' })`. Strong default for Angular apps that ship Material / ARIA-correct components.
-3. **`locate()` builder** — `I.click(locate('.row').withText('Acme').inside('table'))`. Direct equivalent of `by.cssContainingText` + element traversal chains.
-4. **CSS / XPath / attribute objects** — `{ id: 'foo' }`, `{ name: 'email' }`, `{ css: '[ng-model="user.email"]' }`, `{ xpath: '//div[@id="x"]' }`. The fallback for Angular directive attributes.
+CodeceptJS priority — pick the highest that fits, then add the context:
+
+1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`. Covers Protractor's `by.linkText`, `by.buttonText`, `by.partialButtonText`, `by.partialLinkText` cleanly.
+A plain string already matches `aria-label`, so an icon-only control with `aria-label="Save"` is `I.click('Save', <context>)` — never `'aria-label=Save'` or `{ css: '[aria-label="Save"]' }`.
+2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' }, '#login-form')`. Strong default for Angular apps that ship Material / ARIA-correct components.
+3. **`$name` via the `customLocator` plugin** — when the app tags elements with `data-qa` / `data-test`; beats repeating the attribute selector at every call site.
+4. **`locate()` builder** — `I.click(locate('.row').withText('Acme').inside('table'))`. Direct equivalent of `by.cssContainingText` + element traversal chains — though `I.click('Edit', locate('tr').withText('Acme'))` is usually the better split.
+5. **CSS / XPath / attribute objects** — `{ id: 'foo' }`, `{ name: 'email' }`, `{ css: '[ng-model="user.email"]' }`, `{ xpath: '//div[@id="x"]' }`. The fallback for Angular directive attributes.
 
 | Protractor locator | CodeceptJS 4 |
 |---|---|
@@ -334,19 +330,10 @@ Only after every spec is ported and CI is green: delete `e2e/` (or whichever dir
 5. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
 6. `grep -rE "\\bbrowser\\.|\\bby\\.|\\.then\\(|waitForAngular" e2e/` — empty before deleting `e2e/`.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/basics.md` — `I.*` vocabulary, locators, assertions, the `await` rule
-- `node_modules/codeceptjs/docs/playwright.md` — recommended helper; `mockRoute` for any network mocking; `evaluate` for `executeScript` ports
-- `node_modules/codeceptjs/docs/webdriver.md` — alternative helper if the suite stays on Selenium Grid
-- `node_modules/codeceptjs/docs/locators.md` — semantic / ARIA / `locate()`, `customLocator` plugin for `by.addLocator` replacements
-- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns (extending `Helper`, reaching `this.helpers['Playwright']` / `this.helpers['REST']`)
-- `node_modules/codeceptjs/docs/api.md` — REST / GraphQL configuration, `setSharedCookies()`, `defaultHeaders`, `JSONResponse` assertions, Zod schemas
-- `node_modules/codeceptjs/docs/assertions.md` — built-in `see*` assertions, `ExpectHelper`, `codeceptjs/assertions` factories (use these instead of `if (cond) throw new Error(...)`)
-- `node_modules/codeceptjs/docs/pageobjects.md` — porting Protractor page objects
-- `node_modules/codeceptjs/docs/sessions.md`, `auth.md` — multi-user + login reuse
-- `node_modules/codeceptjs/docs/effects.md` — `tryTo`, `retryTo`, `within`
-- `writing-codeceptjs-tests` — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
-- `debugging-codeceptjs-tests` — **use on every failing test from the first full run** (breakpoint, inspect live page via MCP, fix on the fly)
-- `codeceptjs-auth` — replace UI re-login in every `beforeEach`
-- `codeceptjs-fundamentals` — run **after** migration to confirm the new setup is wired correctly
+- `writing-codeceptjs-tests` — per-spec rewrite playbook (MCP-driven, verified steps)
+- `debugging-codeceptjs-tests` — use on every failing test from the first full run
+- `codeceptjs-auth` — replaces UI re-login in every `beforeEach` / manual cookie injection
+- `codeceptjs-fundamentals` — run after migration to confirm wiring
+- Reference docs: `node_modules/codeceptjs/docs/` (basics, playwright, webdriver, locators, custom-helpers, api, assertions, pageobjects, sessions, effects)

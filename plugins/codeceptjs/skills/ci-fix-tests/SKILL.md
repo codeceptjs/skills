@@ -1,6 +1,6 @@
 ---
 name: ci-fix-tests
-description: "Use on CI in non-interactive mode when a CodeceptJS run failed — automatically attempt safe fixes (locator drift, missing waits), rerun only the failing scenarios, compare against the baseline, roll back any edit that didn't help, and always write a markdown report at `output/ci-fix.md` for the CI step to consume. Conservative by design: no refactors, no config edits, no auth fixes, no flake-masking retries. Trigger on \"ci fix tests\", \"auto-fix failing tests\", \"attempt repair on CI\", or as a CI step after a failed run."
+description: "Use on CI in non-interactive mode after a failed CodeceptJS run — attempts safe fixes only (locator drift, missing waits), reruns failing scenarios, rolls back edits that didn't help, reports at `output/ci-fix.md`. No refactors, no config edits, no flake-masking. Trigger on \"ci fix tests\", \"auto-fix failing tests\", \"attempt repair on CI\", or as a CI step after a failed run."
 ---
 
 # Auto-fix CodeceptJS Tests on CI
@@ -25,7 +25,7 @@ Save this as the **baseline** — `count`, `failing_set`, `clusters`.
 ### 2. Pick safe fix candidates
 Only attempt fixes from this allowed list:
 
-- **Locator drift** — the failed locator no longer matches anything but a similar element exists. Use the **codeceptjs-exploration** skill (headless) to find candidates; pick one with high semantic stability (ARIA `{ role, name }` → visible text → `data-testid` → composed CSS). Replace the locator at the failing step only.
+- **Locator drift** — the failed locator no longer matches anything but a similar element exists. Use the **codeceptjs-exploration** skill (headless) to find candidates; pick a short locator scoped to a stable region — `I.click('Save', '.toolbar')` — in this order: visible text / accessible name → ARIA `{ role, name }` → `$name` (`customLocator`) → composed CSS. Replace the locator at the failing step only.
 - **Missing wait for a spinner / loader / modal** — the failed step's ARIA snapshot shows a spinner or skeleton present, or the target element appears later. Add a single matching `I.waitFor*` immediately before the failing step.
 - **`I.wait(N)` replacement** — when a hardcoded sleep is the only thing between a failing assertion and a passing one and the gating element is identifiable, replace the sleep with a specific `waitFor*`.
 
@@ -81,7 +81,7 @@ Failing scenarios: N
 - ...
 
 ## Attempted fixes
-- `tests/foo_test.js:42` — locator drift: `'Save'` → `{ role: 'button', name: 'Save' }`
+- `tests/foo_test.js:42` — locator drift: `I.click('Save')` → `I.click('Save', '.toolbar')`
 - `tests/bar_test.js:15` — added `I.waitForInvisible('.spinner')` before checkout click
 - `tests/baz_test.js:7` — replaced `I.wait(3)` with `I.waitForVisible('.confirmation-dialog', 10)`
 
@@ -112,9 +112,8 @@ The first line of `Status:` is the machine-parseable signal. The rest is for the
 - Writing a partial or missing `output/ci-fix.md`. CI depends on it; the absence of a report is itself a failure mode.
 - Running the **whole** suite for the verification step — only the originally-failing scenarios, to keep CI time bounded.
 
-## Pointers
+## Related skills
 
-- `codeceptjs-run-analysis` — read trace artifacts, cluster failures, build the baseline set.
-- `codeceptjs-exploration` — find replacement locators when one has drifted.
-- `codeceptjs-fundamentals` — confirm helper, config, which env the CI run used.
-- `node_modules/codeceptjs/docs/aitrace.md` — trace format.
+- `codeceptjs-run-analysis` — baseline, clustering, post-fix comparison
+- `codeceptjs-exploration` — replacement locators for drift
+- `codeceptjs-fundamentals` — config, helper, CI environment

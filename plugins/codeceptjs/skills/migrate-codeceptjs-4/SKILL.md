@@ -1,8 +1,7 @@
 ---
 name: migrate-codeceptjs-4
-description: "Migrate a CodeceptJS '3.x' project to '4.x'. Trigger when 'package.json' pins 'codeceptjs' at '3.x' or is missing '\"type\": \"module\"', when test files still use CommonJS ('require()' / 'module.exports') against CodeceptJS APIs, when config references removed helpers ('Nightmare', 'Protractor', 'TestCafe', 'AI', 'SoftExpectHelper', 'Mochawesome') or removed plugins ('autoLogin', 'tryTo', 'retryTo', 'eachElement', 'commentStep', 'fakerTransform', 'enhancedRetryFailedStep', 'allure', 'htmlReporter', 'wdio', 'selenoid', 'screenshotOnFail', 'pauseOnFail', 'stepByStepReport'), or when '3.x' APIs are in use ('ai.request' function, Joi schemas in 'seeResponseMatchesJsonSchema', 'restart: 'browser'', 'I.retry()', 'I.limitTime()', Playwright 'customLocators'). Walks the project through Node + package upgrade, ESM conversion, helper/plugin replacements, AI/Zod/effects API changes, 'noGlobals: true' adoption, dependency bumps, and the post-upgrade verify pass."
+description: "Migrate a CodeceptJS 3.x project to 4.x. Trigger when `package.json` pins `codeceptjs` at 3.x or is missing `\"type\": \"module\"`, when test files still use CommonJS (`require()` / `module.exports`) against CodeceptJS APIs, when config references removed helpers (`Nightmare`, `Protractor`, `TestCafe`, `AI`, `SoftExpectHelper`, `Mochawesome`) or removed plugins (`autoLogin`, `tryTo`, `retryTo`, `eachElement`, `commentStep`, `fakerTransform`, `enhancedRetryFailedStep`, `allure`, `htmlReporter`, `wdio`, `selenoid`, `screenshotOnFail`, `pauseOnFail`, `stepByStepReport`), or when 3.x APIs are in use (`ai.request` function, Joi schemas in `seeResponseMatchesJsonSchema`, `restart: 'browser'`, `I.retry()`, `I.limitTime()`, Playwright `customLocators`)."
 ---
-
 
 # Migrate CodeceptJS 3.x → 4.x
 
@@ -103,8 +102,8 @@ Run, in order:
 5. Grep the repo for `tryTo(`, `retryTo(`, `eachElement(`, `commentStep(`, `softExpect`, `I.softExpect`, `Joi.`, `restart: 'browser'`, `I.retry(`, `I.limitTime(`, and (unless the user chose to keep it) `Mochawesome` / `--reporter mochawesome` — none should remain. `step.retry(` / `step.timeout(` passed as a step argument is the expected replacement, not a leftover.
 6. If the project used `autoLogin`: confirm the `auth` plugin restores sessions and roles.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/migration-4.md` — full reference (this skill is a workflow over it)
 - `codeceptjs-auth` — replacement for the removed `autoLogin` plugin
-- `codeceptjs-fundamentals` — run **after** migration to confirm the new setup is wired correctly
+- `codeceptjs-fundamentals` — run **after** migration to confirm wiring
+- Full reference: `node_modules/codeceptjs/docs/migration-4.md`

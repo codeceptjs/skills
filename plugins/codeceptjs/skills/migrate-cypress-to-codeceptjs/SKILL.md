@@ -1,6 +1,6 @@
 ---
 name: migrate-cypress-to-codeceptjs
-description: "Port a Cypress test suite to CodeceptJS 4. Trigger when the project contains `cypress.config.{js,ts,mjs}`, a `cypress/` directory (`cypress/e2e/**/*.cy.{js,ts}`, `cypress/support/{commands,e2e}.{js,ts}`, `cypress/fixtures/`, `cypress/plugins/`, `cypress/component/`), `cypress` in `devDependencies`, or test code that calls `cy.*` (`cy.visit`, `cy.get`, `cy.contains`, `cy.session`, `cy.intercept`, `cy.request`, `cy.task`, `cy.fixture`, `cy.origin`, `cy.mount`), `Cypress.Commands.add(...)`, or `Cypress.env(...)`. Walks the port end-to-end: inventory shared logic (custom commands, ad-hoc page-object modules, shared selectors, fixtures, hooks), install CodeceptJS with the Playwright helper alongside Cypress, port the config, split `Cypress.Commands.add` into two custom helpers — `WebExtra` for browser-driven commands (Playwright `page` / `browserContext`) and `ApiExtras` for HTTP commands (REST / GraphQL helper, never `browserContext.request.*`) — port page-object-style modules to real page objects without inventing wrapper or assertion methods, convert spec files (handing off to `writing-codeceptjs-tests`), replace `cy.session` with the `auth` plugin, swap `cy.fixture` / `cy.request` / `cy.task` / `cy.intercept` for ES imports / REST helper / `ApiExtras` / `I.mockRoute`, then decommission Cypress."
+description: "Port a Cypress test suite to CodeceptJS 4. Trigger when the project contains `cypress.config.{js,ts,mjs}`, a `cypress/` directory (`cypress/e2e/`, `cypress/support/{commands,e2e}.*`, `cypress/fixtures/`), `cypress` in `devDependencies`, or test code calling `cy.*` (`cy.visit`, `cy.get`, `cy.contains`, `cy.session`, `cy.intercept`, `cy.request`, `cy.task`, `cy.fixture`, `cy.origin`, `cy.mount`), `Cypress.Commands.add(...)`, or `Cypress.env(...)`."
 ---
 
 # Migrate Cypress → CodeceptJS 4
@@ -11,7 +11,7 @@ Cypress and CodeceptJS share a goal — browser end-to-end testing — but diffe
 2. **Helpers, not a bundled browser.** `I.*` dispatches to a configured helper. Cypress is single-browser by design; CodeceptJS lets you pick **Playwright** (recommended for Cypress migrators — Chromium parity plus cross-browser), Puppeteer, or WebDriver, and the test code stays the same.
 3. **First-class abstractions.** Page objects, multi-user `session(...)`, the `auth` plugin, and custom helpers are built in. Cypress projects accumulate ad-hoc versions of these; the migration consolidates them onto the framework's idioms.
 
-Authoritative references: `node_modules/codeceptjs/docs/basics.md`, `locators.md`, `playwright.md`, `custom-helpers.md`, `pageobjects.md`.
+Authoritative reference: `node_modules/codeceptjs/docs/` (basics, locators, playwright, custom-helpers, pageobjects).
 
 ## When to trigger
 
@@ -211,32 +211,30 @@ for (const row of await I.grabWebElements('.row')) {
 }
 ```
 
-**Dry-run as you go.** After each batch of converted specs, run:
+**Per batch**: `npx codeceptjs dry-run --steps -c <config>` — loads every Scenario, resolves every `I.*` call, no browser. Surfaces typos, missing imports, page objects not under `include`, and nonexistent verbs in seconds. Fix before anything real.
 
-```bash
-npx codeceptjs dry-run --steps -c <config>
-```
+Then run the batch: `npx codeceptjs run --steps -c <config>`.
 
-It loads every scenario, resolves every `I.*` call against the configured helpers, and prints the step list — all without launching a browser. Typos, missing imports, page objects not registered under `include`, and `I.*` verbs that don't exist on `WebExtra` / `ApiExtras` all surface here in seconds. Fix anything that fails before running a real test.
-
-**Then run the whole batch for real.** Dry-run proves specs parse and resolve — not that they pass. As soon as a batch is dry-run clean, run it against the browser:
-
-```bash
-npx codeceptjs run --steps -c <config>
-```
-
-First real runs after a migration almost always have failures — locator drift, timing the source framework hid behind its own retry, auth/session differences, data assumptions. **This is expected; fixing it is part of the migration, not a follow-up task.** When a test fails, **invoke the `debugging-codeceptjs-tests` skill and fix it on the fly** — it breakpoints the failing step, inspects the live page via MCP, finds the working locator/wait, and commits the verified fix. Do not bulk-rewrite specs blind, and do not mask failures with `retry`. Drive every failure to a real fix before starting the next batch. A batch is "done" when it runs green, not when it dry-runs clean.
+- First real runs almost always fail — locator drift, timing the source framework hid behind its own retry, auth/session differences, data assumptions. **Expected; fixing it is part of the migration.**
+- Every failure → invoke `debugging-codeceptjs-tests` and fix on the fly (breakpoint, live-page inspection, verified fix). No blind rewrites, no `retry` masking.
+- A batch is done when it runs green, not when it dry-runs clean.
 
 ### 6. Locators
 
-CodeceptJS priority — pick the highest that fits:
+**Scope every locator with a context.** The last argument of every action narrows the lookup to a region — `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`, `I.click({ role: 'button', name: 'Delete' }, '.modal')`. A short semantic or ARIA locator plus a context beats one long unscoped locator: it reads like the page, disambiguates duplicate labels without growing, and survives markup churn. Apply this to every row of the tables below — the source framework's chain usually splits cleanly into *region* + *what the user sees*.
 
-1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save')`, `I.fillField('Email', 'u@t.com')`.
-2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' })`.
-3. **`locate()` builder** — `I.click(locate('button').withText('Edit').inside('tr').withText('Acme')))`.
-4. **CSS / XPath** — fallback only.
+`cy.get(sel).within(() => ...)` and `cy.get(parent).find(child)` both collapse onto the context argument — that is where a Cypress chain's parent selector belongs.
 
-Cypress users often default to `[data-cy=...]`. Keep those attributes, but enable the `customLocator` plugin so they read as `$submit` instead of `{ css: '[data-cy=submit]' }`. Full guidance in **`writing-codeceptjs-tests`** § Locators.
+CodeceptJS priority — pick the highest that fits, then add the context:
+
+1. **Semantic strings** — button text, label, placeholder, link text: `I.click('Save', '.toolbar')`, `I.fillField('Email', 'u@t.com', '#login-form')`. Replaces most `cy.contains(...)` calls.
+A plain string already matches `aria-label`, so an icon-only control with `aria-label="Save"` is `I.click('Save', <context>)` — never `'aria-label=Save'` or `{ css: '[aria-label="Save"]' }`.
+2. **ARIA roles** — `I.click({ role: 'button', name: 'Sign In' }, '#login-form')`.
+3. **`$name` via the `customLocator` plugin** — Cypress users often default to `[data-cy=...]`. Keep those attributes, but enable the plugin so they read as `I.click('$submit', '.checkout')` instead of `{ css: '[data-cy=submit]' }`.
+4. **`locate()` builder** — `I.click(locate('button').withText('Edit').inside('tr').withText('Acme'))`; often better split as `I.click('Edit', locate('tr').withText('Acme'))`.
+5. **CSS / XPath** — fallback only.
+
+Full guidance in **`writing-codeceptjs-tests`** § Locators.
 
 ### 7. Actions, assertions, grabs
 
@@ -288,19 +286,10 @@ Only after every spec is ported and CI is green: delete `cypress/`, `cypress.con
 5. Hand off to **`codeceptjs-run-analysis`** to inspect `output/trace_*/` artifacts (requires the `aiTrace` plugin enabled).
 6. `grep -r "cy\." cypress/` — empty before deleting `cypress/`.
 
-## Pointers
+## Related skills
 
-- `node_modules/codeceptjs/docs/basics.md` — `I.*` vocabulary, locators, assertions, the `await` rule
-- `node_modules/codeceptjs/docs/playwright.md` — recommended helper; `mockRoute` for `cy.intercept`
-- `node_modules/codeceptjs/docs/locators.md` — semantic / ARIA / `locate()`
-- `node_modules/codeceptjs/docs/custom-helpers.md` — `WebExtra` / `ApiExtras` patterns (extending `Helper`, reaching `this.helpers['Playwright']` / `this.helpers['REST']`)
-- `node_modules/codeceptjs/docs/api.md` — REST / GraphQL configuration, `setSharedCookies()`, `defaultHeaders`, `JSONResponse` assertions, Zod schemas
-- `node_modules/codeceptjs/docs/assertions.md` — built-in `see*` assertions, `ExpectHelper`, `codeceptjs/assertions` factories (use these instead of `if (cond) throw new Error(...)`)
-- `node_modules/codeceptjs/docs/pageobjects.md` — porting Cypress page-object-style modules
-- `node_modules/codeceptjs/docs/data.md` — fixtures, data factories
-- `node_modules/codeceptjs/docs/sessions.md`, `auth.md` — multi-user + login reuse
-- `node_modules/codeceptjs/docs/effects.md` — `tryTo`, `retryTo`, `within`
-- `writing-codeceptjs-tests` — per-spec rewrite playbook (drive via MCP, learn locators, commit verified steps)
-- `debugging-codeceptjs-tests` — **use on every failing test from the first full run** (breakpoint, inspect live page via MCP, fix on the fly)
-- `codeceptjs-auth` — replace `cy.session()` and programmatic login
-- `codeceptjs-fundamentals` — run **after** migration to confirm the new setup is wired correctly
+- `writing-codeceptjs-tests` — per-spec rewrite playbook (MCP-driven, verified steps)
+- `debugging-codeceptjs-tests` — use on every failing test from the first full run
+- `codeceptjs-auth` — replaces `cy.session()` and programmatic login
+- `codeceptjs-fundamentals` — run after migration to confirm wiring
+- Reference docs: `node_modules/codeceptjs/docs/` (basics, playwright, locators, custom-helpers, api, assertions, pageobjects, data, sessions, effects)
