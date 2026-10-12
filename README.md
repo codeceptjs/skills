@@ -1,6 +1,6 @@
 # CodeceptJS Skills
 
-AI agent skills for working with [CodeceptJS 4](https://codecept.io). Thirteen skills covering project orientation, authoring, debugging, refactoring, migration, and CI auto-repair — all written against the [Agent Skills](https://agentskills.io) open standard.
+AI agent skills for working with [CodeceptJS 4](https://codecept.io). Fourteen skills covering project orientation, authoring, debugging, refactoring, migration, CI auto-repair, and linting — all written against the [Agent Skills](https://agentskills.io) open standard.
 
 ## Install
 
@@ -13,7 +13,7 @@ From inside Claude Code:
 /plugin install codeceptjs@codeceptjs-skills
 ```
 
-That registers this repo as a marketplace and installs the `codeceptjs` plugin — all 13 skills, ready to invoke as `/codeceptjs-fundamentals`, `/writing-codeceptjs-tests`, etc.
+That registers this repo as a marketplace and installs the `codeceptjs` plugin — all 14 skills, ready to invoke as `/codeceptjs-fundamentals`, `/writing-codeceptjs-tests`, etc.
 
 ### Any other supported agent (`npx skills`)
 
@@ -52,6 +52,7 @@ If you can't run the CLI (locked-down environment, custom layout, etc.), each `<
 | [`debugging-codeceptjs-tests`](./debugging-codeceptjs-tests/SKILL.md) | A test is failing or flaky. Primary path: drop `pause()` in the test (or pass `pauseAt: N` to MCP `run_test`, with N from `dry-run --numbers`), inspect via `run_code` / `snapshot`, release with `continue`. CLI fallback (`--debug`, `DEBUG="codeceptjs:*"`) for humans, CI repros, and framework-internal issues. |
 | [`refactoring-codeceptjs-tests`](./refactoring-codeceptjs-tests/SKILL.md) | Cleaning up an existing suite — extracting page objects, taming long locators, moving raw JS into custom helpers. Targeted (one file) or global. Proposes before applying. |
 | [`ci-fix-tests`](./ci-fix-tests/SKILL.md) | Non-interactive CI mode: a run failed; auto-attempt safe fixes (locator drift, missing waits), rerun only the failing scenarios, roll back if no improvement, always write `output/ci-fix.md`. |
+| [`lint-codeceptjs-tests`](./lint-codeceptjs-tests/SKILL.md) | The suite needs a static quality gate — before commit, in PR review, or in CI. Runs `@codeceptjs/lint` (AST-based, no browser) to catch fixed sleeps (`I.wait`, `setTimeout`), `if` in tests, raw `fetch()`, missing `await` on grabbers, plain-text credentials, and leftover `.only`/`pause()`; maps each finding to its fix and wires the CI step / Claude Code hook. |
 
 `codeceptjs-fundamentals`, `codeceptjs-exploration`, `codeceptjs-run-analysis`, and `codeceptjs-auth` are utility skills that the four action skills (writing, debugging, refactoring, ci-fix) invoke as needed. Users typically trigger an action skill; the utility skills get pulled in automatically.
 
