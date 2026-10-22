@@ -1,7 +1,7 @@
 {
   "name": "codeceptjs-skills",
   "metadata": {
-    "description": "Official CodeceptJS 4 skills — orientation, authoring, debugging, refactoring, and CI auto-repair for any AI agent that supports the Agent Skills standard."
+    "description": "Official CodeceptJS 4 skills — orientation, authoring, linting, debugging, refactoring, and CI auto-repair for any AI agent that supports the Agent Skills standard."
   },
   "owner": {
     "name": "CodeceptJS"
@@ -10,7 +10,7 @@
     {
       "name": "codeceptjs",
       "source": "./plugins/codeceptjs",
-      "description": "Thirteen skills covering everything an AI agent needs to write, debug, refactor, migrate, and fix CodeceptJS 4 tests — a primer (codeceptjs-fundamentals), live page exploration (codeceptjs-exploration), trace analysis (codeceptjs-run-analysis), the auth plugin recipe (codeceptjs-auth), four action skills (writing, debugging, refactoring, ci-fix), and five migration skills (migrate-codeceptjs-4 for the 3.x→4.x upgrade, plus migrate-cypress / migrate-protractor / migrate-testcafe / migrate-selenium-java-to-codeceptjs)."
+      "description": "Fourteen skills covering everything an AI agent needs to write, lint, debug, refactor, migrate, and fix CodeceptJS 4 tests — a primer (codeceptjs-fundamentals), live page exploration (codeceptjs-exploration), trace analysis (codeceptjs-run-analysis), the auth plugin recipe (codeceptjs-auth), five action skills (writing, linting, debugging, refactoring, ci-fix), and five migration skills (migrate-codeceptjs-4 for the 3.x→4.x upgrade, plus migrate-cypress / migrate-protractor / migrate-testcafe / migrate-selenium-java-to-codeceptjs)."
     }
   ]
 }
